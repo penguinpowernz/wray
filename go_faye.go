@@ -148,6 +148,10 @@ func (self *FayeClient) listen(responseChannel chan Response) {
 }
 
 func (self *FayeClient) Listen() {
+	if self.state == UNCONNECTED {
+		self.handshake()
+	}
+
 	for {
 		self.connect()
 	}
