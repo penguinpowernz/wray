@@ -61,6 +61,17 @@ func NewFayeClient(url string) *FayeClient {
 	return client
 }
 
+func (self *FayeClient) whileConnectingBlockUntilConnected() {
+	if self.state == CONNECTING {
+		for {
+			if self.state == CONNECTED {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+}
+
 func (self *FayeClient) handshake() {
 	t, err := SelectTransport(self, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
@@ -91,6 +102,7 @@ func (self *FayeClient) handshake() {
 }
 
 func (self *FayeClient) Subscribe(channel string, force bool, callback func(Message)) (promise SubscriptionPromise, err error) {
+	self.whileConnectingBlockUntilConnected()
 	if self.state == UNCONNECTED {
 		self.handshake()
 	}
@@ -148,6 +160,7 @@ func (self *FayeClient) listen(responseChannel chan Response) {
 }
 
 func (self *FayeClient) Listen() {
+	self.whileConnectingBlockUntilConnected()
 	if self.state == UNCONNECTED {
 		self.handshake()
 	}
@@ -158,7 +171,8 @@ func (self *FayeClient) Listen() {
 }
 
 func (self *FayeClient) Publish(channel string, data map[string]interface{}) {
-	if self.state != CONNECTED {
+	self.whileConnectingBlockUntilConnected()
+	if self.state == UNCONNECTED {
 		self.handshake()
 	}
 	publishParams := map[string]interface{}{"channel": channel, "data": data, "clientId": self.clientId}
