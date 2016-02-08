@@ -39,6 +39,7 @@ type FayeClient struct {
 	nextRetry     int64
 	nextHandshake int64
 	mutex         *sync.RWMutex // protects instance vars across goroutines
+	connectMutex  *sync.RWMutex // ensures a single connection to the server as per the protocol
 }
 
 type Subscription struct {
@@ -61,7 +62,7 @@ func (self SubscriptionPromise) Successful() bool {
 
 func NewFayeClient(url string) *FayeClient {
 	schedular := ChannelSchedular{}
-	client := &FayeClient{url: url, state: UNCONNECTED, schedular: schedular}
+	client := &FayeClient{url: url, state: UNCONNECTED, schedular: schedular, mutex: &sync.RWMutex{}, connectMutex: &sync.RWMutex{}}
 	return client
 }
 
@@ -165,7 +166,9 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 	subscriptionParams := map[string]interface{}{"channel": "/meta/subscribe", "clientId": self.clientId, "subscription": channel, "id": "1"}
 	subscription := Subscription{channel: channel, callback: callback}
 
+	self.connectMutex.Lock()
 	res, err := self.transport.send(subscriptionParams)
+	self.connectMutex.Unlock()
 	
 	self.handleAdvice(res.advice)
 
