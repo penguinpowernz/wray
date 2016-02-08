@@ -158,7 +158,7 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 func (self *FayeClient) WaitSubscribe(channel string, callback func(Message)) SubscriptionPromise {
 
 	for {
-		promise, err := self.Subscribe(channel, false, callback)
+		promise, _ := self.Subscribe(channel, false, callback)
 
 		if promise.Successful() {
 			return promise
@@ -170,7 +170,7 @@ func (self *FayeClient) WaitSubscribe(channel string, callback func(Message)) Su
 // This will block until the subscription is successful.
 func (self *FayeClient) SubscribeThen(channel string, callback func(Message), then func(SubscriptionPromise)) {
 	for {
-		promise, err := self.Subscribe(channel, false, callback)
+		promise, _ := self.Subscribe(channel, false, callback)
 
 		if promise.Successful() {
 			then(promise)
@@ -264,7 +264,7 @@ func (self *FayeClient) Publish(channel string, data map[string]interface{}) {
 	publishParams := map[string]interface{}{"channel": channel, "data": data, "clientId": self.clientId}
 	response, _ := self.transport.send(publishParams)
 
-	self.handleAdvice(response.advise)
+	self.handleAdvice(response.advice)
 }
 
 func RegisterTransports(transports []Transport) {

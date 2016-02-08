@@ -73,21 +73,21 @@ func parseAdvice(data map[string]interface{}, res *Response) {
     return
   }
 
-  _advice = _advice.(map[string]interface{})
+  advice := _advice.(map[string]interface{})
   
-  reconnect, exists := _advice["reconnect"]
+  reconnect, exists := advice["reconnect"]
   if exists {
-    res.advice.reconnect := reconnect.(string)
+    res.advice.reconnect = reconnect.(string)
   }
 
-  interval, exists := _advice["interval"]
+  interval, exists := advice["interval"]
   if exists {
     res.advice.interval, _ = strconv.Atoi(interval.(string))
   }
 
-  timeout, exists := _advice["timeout"]
+  timeout, exists := advice["timeout"]
   if exists {
-    res.advice.timeout, _ := strconv.Atoi(timeout.(string))
+    res.advice.timeout, _ = strconv.Atoi(timeout.(string))
   }
 }
 
