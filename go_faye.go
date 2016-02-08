@@ -35,6 +35,8 @@ type FayeClient struct {
 	transport     Transport
 	clientId      string
 	schedular     Schedular
+	nextRetry     int64
+	nextHandshake int64
 }
 
 type Subscription struct {
@@ -73,6 +75,24 @@ func (self *FayeClient) whileConnectingBlockUntilConnected() {
 }
 
 func (self *FayeClient) handshake() {
+
+	if self.state == DISCONNECTED {
+		panic("Server told us not to reconnect")
+	}
+
+	// check if we need to wait before handshaking again
+	if self.nextHandshake > time.Now().Unix() {
+		sleepFor := time.Now().Unix() - self.nextHandshake
+		
+		// wait for the duration the server told us
+		if sleepFor > 0 {
+			fmt.Println("Waiting for",sleepFor, "seconds before next handshake")
+			time.Sleep(time.Duration(sleepFor) * time.Second)
+		}
+	}
+
+  fmt.Println("Handshaking....")
+	
 	t, err := SelectTransport(self, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
 		panic("No usable transports available")
@@ -88,7 +108,7 @@ func (self *FayeClient) handshake() {
 		fmt.Println("Handshake failed. Retry in 10 seconds")
 		self.state = UNCONNECTED
 		self.schedular.wait(10*time.Second, func() {
-			fmt.Println("retying handshake")
+			fmt.Println("Retying handshake")
 			self.handshake()
 		})
 		return
@@ -110,6 +130,9 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 	subscription := Subscription{channel: channel, callback: callback}
 
 	res, err := self.transport.send(subscriptionParams)
+	
+	self.handleAdvice(res.advice)
+
 	promise = SubscriptionPromise{subscription, nil}
 
 	if err != nil {
@@ -149,6 +172,10 @@ func (self *FayeClient) connect() {
 
   fmt.Println("got a response")
   fmt.Printf("%+v\n", response)
+
+  // take the advice given to us by the server
+	self.handleAdvice(response.advice)
+
 	if response.successful {
 		go self.handleResponse(response)
 	} else {
@@ -156,6 +183,25 @@ func (self *FayeClient) connect() {
 	}
 }
 
+func (self *FayeClient) handleAdvice(advice Advice) {
+
+  if advice.reconnect != "" {
+  	interval := advice.interval
+
+	  switch(advice.reconnect) {
+		case "retry":
+			if interval > 0 {
+				self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
+			}
+		case "handshake":
+			self.state = UNCONNECTED // force a handshake on the next request
+		  if interval > 0 {
+		  	self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
+		  }
+		case "none":
+			self.state = DISCONNECTED
+			panic("Server advised not to reconnect")
+	  }
 	}
 }
 
@@ -171,6 +217,15 @@ func (self *FayeClient) Listen() {
 				break
 			}
 
+			// wait to retry if we were told to
+			if self.nextRetry > time.Now().Unix() {
+				sleepFor := self.nextRetry - time.Now().Unix()
+				if sleepFor > 0 {
+					fmt.Println("Waiting for",sleepFor, "seconds before connecting")
+					time.Sleep(time.Duration(sleepFor) * time.Second)
+				}
+			}
+
 			self.connect()
 		}
 	}
@@ -182,7 +237,9 @@ func (self *FayeClient) Publish(channel string, data map[string]interface{}) {
 		self.handshake()
 	}
 	publishParams := map[string]interface{}{"channel": channel, "data": data, "clientId": self.clientId}
-	self.transport.send(publishParams)
+	response, _ := self.transport.send(publishParams)
+
+	self.handleAdvice(response.advise)
 }
 
 func RegisterTransports(transports []Transport) {
