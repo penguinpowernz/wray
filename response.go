@@ -65,7 +65,10 @@ func parseMessages(data []interface{}) []Message {
     message := Message{
       Channel: m["channel"].(string),
       Id:      id,
-      Data:    m["data"].(map[string]interface{}),
+    }
+    
+    if m["data"] != nil {
+      message.Data = m["data"].(map[string]interface{})
     }
 
     messages = append(messages, message)
