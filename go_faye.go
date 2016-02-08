@@ -116,11 +116,28 @@ func (self *FayeClient) handshake() {
 
 		return
 	}
+
+	oldClientId := self.clientId
 	self.clientId = response.clientId
 	self.state = CONNECTED
 	self.transport, err = SelectTransport(self, response.supportedConnectionTypes, []string{})
 	if err != nil {
 		panic("Server does not support any available transports. Supported transports: " + strings.Join(response.supportedConnectionTypes, ","))
+	}
+
+	if oldClientId != self.clientId && len(self.subscriptions) > 0 {
+		fmt.Printf("Client ID changed (%s => %s), need to resubscribe %d subscriptions\n", oldClientId, self.clientId , len(self.subscriptions))
+		self.resubscribeAll()
+	}
+}
+
+func (self *FayeClient) resubscribeAll() {
+	subs := self.subscriptions
+	self.subscriptions = []Subscription{}
+
+	for _, sub := range subs {
+		self.WaitSubscribe(sub.channel, sub.callback)
+		fmt.Println("Resubscribed to", sub.channel)
 	}
 }
 
@@ -177,6 +194,7 @@ func (self *FayeClient) SubscribeThen(channel string, callback func(Message), th
 
 		if promise.Successful() {
 			then(promise)
+			return
 		}
 	}
 }
