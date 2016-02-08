@@ -143,30 +143,36 @@ func (self *FayeClient) handleResponse(response Response) {
 
 func (self *FayeClient) connect() {
 	connectParams := map[string]interface{}{"channel": "/meta/connect", "clientId": self.clientId, "connectionType": self.transport.connectionType()}
-	responseChannel := make(chan Response)
-	go func() {
-		response, _ := self.transport.send(connectParams)
-		responseChannel <- response
-	}()
-	self.listen(responseChannel)
-}
 
-func (self *FayeClient) listen(responseChannel chan Response) {
-	response := <-responseChannel
-	if response.successful == true {
+  fmt.Println("Connecting... waiting for response...")
+  response, _ := self.transport.send(connectParams)
+
+  fmt.Println("got a response")
+  fmt.Printf("%+v\n", response)
+	if response.successful {
 		go self.handleResponse(response)
 	} else {
+		self.state = UNCONNECTED
+	}
+}
+
 	}
 }
 
 func (self *FayeClient) Listen() {
-	self.whileConnectingBlockUntilConnected()
-	if self.state == UNCONNECTED {
-		self.handshake()
-	}
-
 	for {
-		self.connect()
+		self.whileConnectingBlockUntilConnected()
+		if self.state == UNCONNECTED {
+			self.handshake()
+		}
+
+		for {
+			if self.state != CONNECTED {
+				break
+			}
+
+			self.connect()
+		}
 	}
 }
 
