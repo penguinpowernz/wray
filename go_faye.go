@@ -153,6 +153,31 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 	return
 }
 
+// Send a subscribe request, but if it fails keep retrying until it succeeds, then return a promise.
+// This will block until the subscription is successful.
+func (self *FayeClient) WaitSubscribe(channel string, callback func(Message)) SubscriptionPromise {
+
+	for {
+		promise, err := self.Subscribe(channel, false, callback)
+
+		if promise.Successful() {
+			return promise
+		}
+	}
+}
+
+// Send a subscribe request and if it fails, keep trying.  On success it will fire the callback with a promise object.
+// This will block until the subscription is successful.
+func (self *FayeClient) SubscribeThen(channel string, callback func(Message), then func(SubscriptionPromise)) {
+	for {
+		promise, err := self.Subscribe(channel, false, callback)
+
+		if promise.Successful() {
+			then(promise)
+		}
+	}
+}
+
 func (self *FayeClient) handleResponse(response Response) {
 	for _, message := range response.messages {
 		for _, subscription := range self.subscriptions {
