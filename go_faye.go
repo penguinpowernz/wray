@@ -103,14 +103,17 @@ func (self *FayeClient) handshake() {
 	handshakeParams := map[string]interface{}{"channel": "/meta/handshake",
 		"version":                  "1.0",
 		"supportedConnectionTypes": []string{"long-polling"}}
+
 	response, err := self.transport.send(handshakeParams)
+
 	if err != nil {
 		fmt.Println("Handshake failed. Retry in 10 seconds")
 		self.state = UNCONNECTED
-		self.schedular.wait(10*time.Second, func() {
-			fmt.Println("Retying handshake")
-			self.handshake()
-		})
+
+		time.Sleep(10*time.Second)
+		fmt.Println("Retying handshake")
+		self.handshake()
+
 		return
 	}
 	self.clientId = response.clientId
