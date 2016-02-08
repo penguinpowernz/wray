@@ -1,5 +1,15 @@
 package wray
 
+import (
+  "strconv"
+)
+
+type Advice struct {
+  interval int
+  reconnect string
+  timeout int
+}
+
 type Response struct {
   id                       string
   channel                  string
@@ -7,6 +17,7 @@ type Response struct {
   clientId                 string
   supportedConnectionTypes []string
   messages                 []Message
+  advice                   Advice
   error                    error
 }
 
@@ -40,13 +51,43 @@ func newResponse(data []interface{}) Response {
     clientId = headerData["clientId"].(string)
   }
 
-  return Response{
+  res := Response{
     id:                       id,
     clientId:                 clientId,
     channel:                  headerData["channel"].(string),
     successful:               headerData["successful"].(bool),
     messages:                 messages,
     supportedConnectionTypes: supportedConnectionTypes,
+  }
+
+  parseAdvice(headerData, &res)
+
+  return res
+}
+
+func parseAdvice(data map[string]interface{}, res *Response) {
+
+  _advice, exists := data["advice"]
+
+  if !exists {
+    return
+  }
+
+  _advice = _advice.(map[string]interface{})
+  
+  reconnect, exists := _advice["reconnect"]
+  if exists {
+    res.advice.reconnect := reconnect.(string)
+  }
+
+  interval, exists := _advice["interval"]
+  if exists {
+    res.advice.interval, _ = strconv.Atoi(interval.(string))
+  }
+
+  timeout, exists := _advice["timeout"]
+  if exists {
+    res.advice.timeout, _ := strconv.Atoi(timeout.(string))
   }
 }
 
