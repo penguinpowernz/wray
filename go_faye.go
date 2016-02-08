@@ -3,6 +3,7 @@ package wray
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type FayeClient struct {
 	schedular     Schedular
 	nextRetry     int64
 	nextHandshake int64
+	mutex         *sync.RWMutex // protects instance vars across goroutines
 }
 
 type Subscription struct {
@@ -97,9 +99,13 @@ func (self *FayeClient) handshake() {
 	if err != nil {
 		panic("No usable transports available")
 	}
+
+	self.mutex.Lock()
 	self.transport = t
 	self.transport.setUrl(self.url)
 	self.state = CONNECTING
+	self.mutex.Unlock()
+
 	handshakeParams := map[string]interface{}{"channel": "/meta/handshake",
 		"version":                  "1.0",
 		"supportedConnectionTypes": []string{"long-polling"}}
@@ -108,7 +114,10 @@ func (self *FayeClient) handshake() {
 
 	if err != nil {
 		fmt.Println("Handshake failed. Retry in 10 seconds")
+
+		self.mutex.Lock()
 		self.state = UNCONNECTED
+		self.mutex.Unlock()
 
 		time.Sleep(10*time.Second)
 		fmt.Println("Retying handshake")
@@ -117,10 +126,13 @@ func (self *FayeClient) handshake() {
 		return
 	}
 
+	self.mutex.Lock()
 	oldClientId := self.clientId
 	self.clientId = response.clientId
 	self.state = CONNECTED
 	self.transport, err = SelectTransport(self, response.supportedConnectionTypes, []string{})
+	self.mutex.Unlock()
+
 	if err != nil {
 		panic("Server does not support any available transports. Supported transports: " + strings.Join(response.supportedConnectionTypes, ","))
 	}
@@ -132,8 +144,11 @@ func (self *FayeClient) handshake() {
 }
 
 func (self *FayeClient) resubscribeAll() {
+	
+	self.mutex.Lock()
 	subs := self.subscriptions
 	self.subscriptions = []Subscription{}
+	self.mutex.Unlock()
 
 	for _, sub := range subs {
 		self.WaitSubscribe(sub.channel, sub.callback)
@@ -146,6 +161,7 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 	if self.state == UNCONNECTED {
 		self.handshake()
 	}
+
 	subscriptionParams := map[string]interface{}{"channel": "/meta/subscribe", "clientId": self.clientId, "subscription": channel, "id": "1"}
 	subscription := Subscription{channel: channel, callback: callback}
 
@@ -168,6 +184,8 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 	}
 
 	// don't add to the subscriptions until we know it succeeded
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 	self.subscriptions = append(self.subscriptions, subscription)
 
 	return
@@ -225,11 +243,15 @@ func (self *FayeClient) connect() {
 	if response.successful {
 		go self.handleResponse(response)
 	} else {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
 		self.state = UNCONNECTED
 	}
 }
 
 func (self *FayeClient) handleAdvice(advice Advice) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 
   if advice.reconnect != "" {
   	interval := advice.interval
