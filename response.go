@@ -55,6 +55,10 @@ func parseMessages(data []interface{}) []Message {
 
   for _, messageData := range data {
 
+    if messageData == nil {
+      continue;
+    }
+
     m := messageData.(map[string]interface{})
     var id string
 
