@@ -223,7 +223,7 @@ func (self *FayeClient) SubscribeThen(channel string, callback func(Message), th
 func (self *FayeClient) handleResponse(response Response) {
 	for _, message := range response.messages {
 		for _, subscription := range self.subscriptions {
-			matched, _ := filepath.Match(subscription.channel, message.Channel)
+			matched, _ := filepath.Match(subscription.channel, message.Channel())
 			if matched {
 				go subscription.callback(message)
 			}

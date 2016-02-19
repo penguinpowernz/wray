@@ -1,16 +1,18 @@
-package main
+package examples
 
-import "github.com/pythonandchips/wray"
-import "fmt"
+import (
+	"github.com/autogrowsystems/wray"
+  "fmt"
+)
 
-func main() {
+func RunClientExample() {
 	wray.RegisterTransports([]wray.Transport{&wray.HttpTransport{}})
 	client := wray.NewFayeClient("http://localhost:5000/faye")
 
 	fmt.Println("subscribing")
 	client.Subscribe("/foo", false, func(message wray.Message) {
 		fmt.Println("-------------------------------------------")
-		fmt.Println(message.Data)
+		fmt.Println(message.Data())
 	})
 
 	client.Listen()

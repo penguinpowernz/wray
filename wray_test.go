@@ -204,8 +204,8 @@ func TestHandleResponse(t *testing.T) {
 		var secondMessages []map[string]interface{}
 		Given(func() {
 			subscriptions = []Subscription{
-				{"/foo/bar", func(message Message) { firstMessages = append(firstMessages, message.Data) }},
-				{"/foo/*", func(message Message) { secondMessages = append(secondMessages, message.Data) }},
+				{"/foo/bar", func(message Message) { firstMessages = append(firstMessages, message.data) }},
+				{"/foo/*", func(message Message) { secondMessages = append(secondMessages, message.data) }},
 			}
 		})
 		Given(func() { firstParams = map[string]interface{}{"foo": "bar"} })
@@ -213,8 +213,8 @@ func TestHandleResponse(t *testing.T) {
 		Given(func() { fayeClient = BuildFayeClient().WithSubscriptions(subscriptions).Client() })
 		Given(func() {
 			messages = []Message{
-				{Channel: "/foo/bar", Id: "1", Data: firstParams},
-				{Channel: "/foo/quz", Id: "1", Data: secondParams},
+				{channel: "/foo/bar", id: "1", data: firstParams},
+				{channel: "/foo/quz", id: "1", data: secondParams},
 			}
 		})
 		Given(func() { response = Response{messages: messages, channel: "/meta/connect", clientId: "client1"} })

@@ -1,10 +1,12 @@
-package main
+package examples
 
-import "github.com/pythonandchips/wray"
-import "fmt"
+import (
+  "github.com/autogrowsystems/wray"
+  "fmt"
+)
 
-func main() {
-  wray.RegisterTransports([]wray.Transport{ &gofaye.HttpTransport{} })
+func RunPublisherExample() {
+  wray.RegisterTransports([]wray.Transport{ &wray.HttpTransport{} })
   client := wray.NewFayeClient("http://localhost:5000/faye")
 
   params := map[string]interface{}{"hello": "from golang"}

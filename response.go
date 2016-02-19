@@ -4,12 +4,14 @@ import (
   "strconv"
 )
 
+// Advice given by the Bayeux server about how to reconnect, etc
 type Advice struct {
   interval int
   reconnect string
   timeout int
 }
 
+// Models a Bayeux response object
 type Response struct {
   id                       string
   channel                  string
@@ -21,10 +23,26 @@ type Response struct {
   error                    error
 }
 
+// Models a message sent over Faye
 type Message struct {
-  Channel string
-  Id      string
-  Data    map[string]interface{}
+  channel string
+  id      string
+  data    map[string]interface{}
+}
+
+// returns the data in the message
+func (self Message) Data() map[string]interface{} {
+  return self.data
+}
+
+// returns the channel the message was sent to
+func (self Message) Channel() string {
+  return self.channel
+}
+
+// returns the ID of the message
+func (self Message) Id() string {
+  return self.id
 }
 
 func newResponse(data []interface{}) Response {
@@ -65,6 +83,7 @@ func newResponse(data []interface{}) Response {
   return res
 }
 
+// parses advice from a Bayeux response
 func parseAdvice(data map[string]interface{}, res *Response) {
 
   _advice, exists := data["advice"]
@@ -91,6 +110,7 @@ func parseAdvice(data map[string]interface{}, res *Response) {
   }
 }
 
+// parses multiple messages from a Map
 func parseMessages(data []interface{}) []Message {
   messages := []Message{}
 
@@ -107,13 +127,16 @@ func parseMessages(data []interface{}) []Message {
       id = m["id"].(string)
     }
 
-    message := Message{
-      Channel: m["channel"].(string),
-      Id:      id,
-    }
     
-    if m["data"] != nil {
-      message.Data = m["data"].(map[string]interface{})
+    data, ok := m["data"].(map[string]interface{})
+    if !ok {
+      data = map[string]interface{}{}
+    }
+
+    message := Message{
+      channel: m["channel"].(string),
+      id:      id,
+      data:    data,
     }
 
     messages = append(messages, message)

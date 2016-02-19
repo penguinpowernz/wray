@@ -105,9 +105,9 @@ func TestSendToServer(t *testing.T) {
 		Convey("returned message", func() {
 			var message Message
 			Given(func() { message = response.messages[0] })
-			Then(func() { So(message.Channel, ShouldEqual, "/foo") })
-			Then(func() { So(message.Data, ShouldResemble, map[string]interface{}{"hello": "world"}) })
-			Then(func() { So(message.Id, ShouldEqual, "3") })
+			Then(func() { So(message.channel, ShouldEqual, "/foo") })
+			Then(func() { So(message.data, ShouldResemble, map[string]interface{}{"hello": "world"}) })
+			Then(func() { So(message.id, ShouldEqual, "3") })
 		})
 		defer server.Close()
 	})

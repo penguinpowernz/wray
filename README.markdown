@@ -29,17 +29,22 @@ func main() {
   //subscribe to the channels you want to listen to
   _, err := client.Subscribe("/foo", false, func(message wray.Message) {
     fmt.Println("-------------------------------------------")
-    fmt.Println(message.Data)
+    fmt.Println(message.Data())
   })
 
   if err != nil {
     fmt.Println("Subscription to /foo failed", err)
   }
 
+  // Usable via interface
+  type Msg interface {
+    Data() map[string]interface{}
+  }
+
   //wildcards can be used to subscribe to multipule channels
-  promise, _ = client.Subscribe("/foo/*", false, func(message wray.Message) {
+  promise, _ = client.Subscribe("/foo/*", false, func(msg Msg) {
     fmt.Println("-------------------------------------------")
-    fmt.Println(message.Data)
+    fmt.Println(message.Data())
   })
 
   if !promise.Successful() {
@@ -50,7 +55,7 @@ func main() {
   for {
     _, err = client.Subscribe("/foo/*", false, func(message wray.Message) {
       fmt.Println("-------------------------------------------")
-      fmt.Println(message.Data)
+      fmt.Println(message.Data())
     })
 
     if err == nil {
