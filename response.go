@@ -1,7 +1,7 @@
 package wray
 
 import (
-  "strconv"
+  // "strconv"
 )
 
 // Advice given by the Bayeux server about how to reconnect, etc
@@ -101,12 +101,12 @@ func parseAdvice(data map[string]interface{}, res *Response) {
 
   interval, exists := advice["interval"]
   if exists {
-    res.advice.interval, _ = strconv.Atoi(interval.(string))
+    res.advice.interval = int(interval.(float64))
   }
 
   timeout, exists := advice["timeout"]
   if exists {
-    res.advice.timeout, _ = strconv.Atoi(timeout.(string))
+    res.advice.timeout = int(timeout.(float64))
   }
 }
 
