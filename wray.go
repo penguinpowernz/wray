@@ -3,9 +3,9 @@ package wray
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -86,16 +86,16 @@ func (self *FayeClient) handshake() {
 	// check if we need to wait before handshaking again
 	if self.nextHandshake > time.Now().Unix() {
 		sleepFor := time.Now().Unix() - self.nextHandshake
-		
+
 		// wait for the duration the server told us
 		if sleepFor > 0 {
-			fmt.Println("Waiting for",sleepFor, "seconds before next handshake")
+			fmt.Println("Waiting for", sleepFor, "seconds before next handshake")
 			time.Sleep(time.Duration(sleepFor) * time.Second)
 		}
 	}
 
-  fmt.Println("Handshaking....")
-	
+	fmt.Println("Handshaking....")
+
 	t, err := SelectTransport(self, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
 		panic("No usable transports available")
@@ -120,8 +120,7 @@ func (self *FayeClient) handshake() {
 		self.state = UNCONNECTED
 		self.mutex.Unlock()
 
-		time.Sleep(10*time.Second)
-		fmt.Println("Retying handshake")
+		time.Sleep(10 * time.Second)
 		self.handshake()
 
 		return
@@ -139,13 +138,13 @@ func (self *FayeClient) handshake() {
 	}
 
 	if oldClientId != self.clientId && len(self.subscriptions) > 0 {
-		fmt.Printf("Client ID changed (%s => %s), need to resubscribe %d subscriptions\n", oldClientId, self.clientId , len(self.subscriptions))
+		fmt.Printf("Client ID changed (%s => %s), need to resubscribe %d subscriptions\n", oldClientId, self.clientId, len(self.subscriptions))
 		self.resubscribeAll()
 	}
 }
 
 func (self *FayeClient) resubscribeAll() {
-	
+
 	self.mutex.Lock()
 	subs := self.subscriptions
 	self.subscriptions = []Subscription{}
@@ -169,7 +168,7 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 	self.connectMutex.Lock()
 	res, err := self.transport.send(subscriptionParams)
 	self.connectMutex.Unlock()
-	
+
 	self.handleAdvice(res.advice)
 
 	promise = SubscriptionPromise{subscription, nil}
@@ -234,13 +233,13 @@ func (self *FayeClient) handleResponse(response Response) {
 func (self *FayeClient) connect() {
 	connectParams := map[string]interface{}{"channel": "/meta/connect", "clientId": self.clientId, "connectionType": self.transport.connectionType()}
 
-  fmt.Println("Connecting... waiting for response...")
-  response, _ := self.transport.send(connectParams)
+	// fmt.Println("Connecting... waiting for response...")
+	response, _ := self.transport.send(connectParams)
 
-  fmt.Println("got a response")
-  fmt.Printf("%+v\n", response)
+	// fmt.Println("got a response")
+	// fmt.Printf("%+v\n", response)
 
-  // take the advice given to us by the server
+	// take the advice given to us by the server
 	self.handleAdvice(response.advice)
 
 	if response.successful {
@@ -256,23 +255,23 @@ func (self *FayeClient) handleAdvice(advice Advice) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-  if advice.reconnect != "" {
-  	interval := advice.interval
+	if advice.reconnect != "" {
+		interval := advice.interval
 
-	  switch(advice.reconnect) {
+		switch advice.reconnect {
 		case "retry":
 			if interval > 0 {
 				self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
 			}
 		case "handshake":
 			self.state = UNCONNECTED // force a handshake on the next request
-		  if interval > 0 {
-		  	self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
-		  }
+			if interval > 0 {
+				self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
+			}
 		case "none":
 			self.state = DISCONNECTED
 			panic("Server advised not to reconnect")
-	  }
+		}
 	}
 }
 
@@ -292,7 +291,7 @@ func (self *FayeClient) Listen() {
 			if self.nextRetry > time.Now().Unix() {
 				sleepFor := self.nextRetry - time.Now().Unix()
 				if sleepFor > 0 {
-					fmt.Println("Waiting for",sleepFor, "seconds before connecting")
+					// fmt.Println("Waiting for", sleepFor, "seconds before connecting")
 					time.Sleep(time.Duration(sleepFor) * time.Second)
 				}
 			}
