@@ -37,22 +37,19 @@ func main() {
     for {
       msg := promise.WaitForMessage()
       fmt.Println("-------------------------------------------")
-      fmt.Println(message.Data())
+      fmt.Println(msg.Data())
     }
   }()
 
   //wildcards can be used to subscribe to multiple channels
-  promise, _ = client.Subscribe("/foo/*", false, func(msg Msg) {
-    fmt.Println("-------------------------------------------")
-    fmt.Println(message.Data())
-  })
+  promise, _ := client.Subscribe("/foo/*")
 
   if !promise.Successful() {
     fmt.Println("Subscription to /foo/* failed", promise.Error())
   }
 
   // guarantee a subscription works by blocking until connection is made with server
-  promise = client.WaitSubscribe("/foo/*")
+  promise := client.WaitSubscribe("/foo/*")
   msg := promise.WaitForMessage()
   fmt.Println(msg.Data())
 }
@@ -83,8 +80,10 @@ func main() {
 Simple examples are availabe in the examples folder.
 
 ## Future Work
+
 There is still a lot to do to bring Wray in line with Faye functionality. This is a less than exhaustive list of work to be completed:-
 
+- fix the resubscribe after rehandshake logic to work with channels instead of callbacks
 - web socket support
 - eventsource support
 - logging
