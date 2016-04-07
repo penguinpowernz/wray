@@ -29,6 +29,11 @@ var (
 	registeredTransports       = []Transport{}
 )
 
+type iMessage interface {
+	Data() map[string]interface{}
+	Channel() string
+}
+
 type FayeClient struct {
 	state         int
 	url           string
@@ -43,13 +48,14 @@ type FayeClient struct {
 }
 
 type Subscription struct {
-	channel  string
-	callback func(Message)
+	channel string
+	msgChan chan Message
 }
 
 type SubscriptionPromise struct {
 	subscription Subscription
 	subError     error
+	msgChan      chan Message
 }
 
 func (self SubscriptionPromise) Error() error {
@@ -58,6 +64,10 @@ func (self SubscriptionPromise) Error() error {
 
 func (self SubscriptionPromise) Successful() bool {
 	return self.subError == nil
+}
+
+func (self SubscriptionPromise) WaitForMessage() iMessage {
+	return <-self.msgChan
 }
 
 func NewFayeClient(url string) *FayeClient {
@@ -150,20 +160,23 @@ func (self *FayeClient) resubscribeAll() {
 	self.subscriptions = []Subscription{}
 	self.mutex.Unlock()
 
+	// TODO: redo this to work with channels
 	for _, sub := range subs {
 		self.WaitSubscribe(sub.channel, sub.callback)
 		fmt.Println("Resubscribed to", sub.channel)
 	}
 }
 
-func (self *FayeClient) Subscribe(channel string, force bool, callback func(Message)) (promise SubscriptionPromise, err error) {
+func (self *FayeClient) Subscribe(channel string) (promise SubscriptionPromise, err error) {
 	self.whileConnectingBlockUntilConnected()
 	if self.state == UNCONNECTED {
 		self.handshake()
 	}
 
 	subscriptionParams := map[string]interface{}{"channel": "/meta/subscribe", "clientId": self.clientId, "subscription": channel, "id": "1"}
-	subscription := Subscription{channel: channel, callback: callback}
+
+	msgChan := make(chan Message)
+	subscription := Subscription{channel: channel, msgChan: msgChan}
 
 	self.connectMutex.Lock()
 	res, err := self.transport.send(subscriptionParams)
@@ -171,7 +184,7 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 
 	self.handleAdvice(res.advice)
 
-	promise = SubscriptionPromise{subscription, nil}
+	promise = SubscriptionPromise{subscription, nil, msgChan}
 
 	if err != nil {
 		promise.subError = err
@@ -195,26 +208,13 @@ func (self *FayeClient) Subscribe(channel string, force bool, callback func(Mess
 
 // Send a subscribe request, but if it fails keep retrying until it succeeds, then return a promise.
 // This will block until the subscription is successful.
-func (self *FayeClient) WaitSubscribe(channel string, callback func(Message)) SubscriptionPromise {
+func (self *FayeClient) WaitSubscribe(channel string) SubscriptionPromise {
 
 	for {
-		promise, _ := self.Subscribe(channel, false, callback)
+		promise, _ := self.Subscribe(channel)
 
 		if promise.Successful() {
 			return promise
-		}
-	}
-}
-
-// Send a subscribe request and if it fails, keep trying.  On success it will fire the callback with a promise object.
-// This will block until the subscription is successful.
-func (self *FayeClient) SubscribeThen(channel string, callback func(Message), then func(SubscriptionPromise)) {
-	for {
-		promise, _ := self.Subscribe(channel, false, callback)
-
-		if promise.Successful() {
-			then(promise)
-			return
 		}
 	}
 }
@@ -224,7 +224,7 @@ func (self *FayeClient) handleResponse(response Response) {
 		for _, subscription := range self.subscriptions {
 			matched, _ := filepath.Match(subscription.channel, message.Channel())
 			if matched {
-				go subscription.callback(message)
+				go func() { subscription.msgChan <- message }()
 			}
 		}
 	}

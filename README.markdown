@@ -10,7 +10,7 @@ In progress.
 
 Wray is only a client for Faye. You will need to setup a server using Ruby or Node.js first. Instructions that can be found on the [Faye project pages](http://faye.jcoglan.com/).
 
-###Subscribing to channels
+### Subscribing to channels
 
 ```go
 package main
@@ -25,23 +25,23 @@ func main() {
 
   //create a new client
   client := wray.NewFayeClient("http://localhost:5000/faye")
+  go client.Listen()
 
   //subscribe to the channels you want to listen to
-  _, err := client.Subscribe("/foo", false, func(message wray.Message) {
-    fmt.Println("-------------------------------------------")
-    fmt.Println(message.Data())
-  })
-
+  promise, err := client.Subscribe("/foo")
   if err != nil {
     fmt.Println("Subscription to /foo failed", err)
   }
 
-  // Usable via interface
-  type Msg interface {
-    Data() map[string]interface{}
-  }
+  go func() {
+    for {
+      msg := promise.WaitForMessage()
+      fmt.Println("-------------------------------------------")
+      fmt.Println(message.Data())
+    }
+  }()
 
-  //wildcards can be used to subscribe to multipule channels
+  //wildcards can be used to subscribe to multiple channels
   promise, _ = client.Subscribe("/foo/*", false, func(msg Msg) {
     fmt.Println("-------------------------------------------")
     fmt.Println(message.Data())
@@ -51,26 +51,14 @@ func main() {
     fmt.Println("Subscription to /foo/* failed", promise.Error())
   }
 
-  // try to subscribe forever
-  for {
-    _, err = client.Subscribe("/foo/*", false, func(message wray.Message) {
-      fmt.Println("-------------------------------------------")
-      fmt.Println(message.Data())
-    })
-
-    if err == nil {
-      break // break out of the loop if there was no error
-    }
-
-    time.Sleep(1*time.Second)
-  }
-
-  //start listening on all subscribed channels and hold the process open
-  client.Listen()
+  // guarantee a subscription works by blocking until connection is made with server
+  promise = client.WaitSubscribe("/foo/*")
+  msg := promise.WaitForMessage()
+  fmt.Println(msg.Data())
 }
 ```
 
-###Publishing to channels
+### Publishing to channels
 
 ```go
 package main
@@ -94,7 +82,7 @@ func main() {
 
 Simple examples are availabe in the examples folder.
 
-##Future Work
+## Future Work
 There is still a lot to do to bring Wray in line with Faye functionality. This is a less than exhaustive list of work to be completed:-
 
 - web socket support
