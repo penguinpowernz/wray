@@ -12,6 +12,8 @@ Wray is only a client for Faye. You will need to setup a server using Ruby or No
 
 ### Subscribing to channels
 
+This is some sample code for subscribing to a channel.  Wildcard channels ar permissible too (eg: `/foo/*`).
+
 ```go
 package main
 
@@ -41,14 +43,7 @@ func main() {
     }
   }()
 
-  //wildcards can be used to subscribe to multiple channels
-  promise, _ := client.Subscribe("/foo/*")
-
-  if !promise.Successful() {
-    fmt.Println("Subscription to /foo/* failed", promise.Error())
-  }
-
-  // guarantee a subscription works by blocking until connection is made with server
+  // guarantee a subscription works by blocking until subscription request is received by server
   promise := client.WaitSubscribe("/foo/*")
   msg := promise.WaitForMessage()
   fmt.Println(msg.Data())
