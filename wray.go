@@ -29,17 +29,42 @@ var (
 	registeredTransports       = []Transport{}
 )
 
-type iMessage interface {
+// IMessage is an interface to a message
+type IMessage interface {
 	Data() map[string]interface{}
 	Channel() string
 }
 
+// Subscription models a subscription, containing the channel it is subscribed
+// to and the chan object used to push messages through
+type Subscription struct {
+	channel string
+	msgChan chan Message
+}
+
+// MessageWaiter describes an object that will block until a message is available
+// to return to the caller, allowing use in for loops similar to chans.
+type MessageWaiter interface {
+	WaitForMessage() IMessage
+}
+
+// the message waiter object that satisfied the matching interface
+type messageWaiter struct {
+	msgChan chan Message
+}
+
+// WaitorMessage blocks until there is a message available to return to the caller
+func (w messageWaiter) WaitForMessage() IMessage {
+	return <-w.msgChan
+}
+
+// FayeClient models a faye client
 type FayeClient struct {
 	state         int
 	url           string
-	subscriptions []Subscription
+	subscriptions []*Subscription
 	transport     Transport
-	clientId      string
+	clientID      string
 	schedular     Schedular
 	nextRetry     int64
 	nextHandshake int64
@@ -47,39 +72,22 @@ type FayeClient struct {
 	connectMutex  *sync.RWMutex // ensures a single connection to the server as per the protocol
 }
 
-type Subscription struct {
-	channel string
-	msgChan chan Message
-}
-
-type SubscriptionPromise struct {
-	subscription Subscription
-	subError     error
-	msgChan      chan Message
-}
-
-func (self SubscriptionPromise) Error() error {
-	return self.subError
-}
-
-func (self SubscriptionPromise) Successful() bool {
-	return self.subError == nil
-}
-
-func (self SubscriptionPromise) WaitForMessage() iMessage {
-	return <-self.msgChan
-}
-
+// NewFayeClient returns a new client for interfacing to a faye server
 func NewFayeClient(url string) *FayeClient {
 	schedular := ChannelSchedular{}
-	client := &FayeClient{url: url, state: UNCONNECTED, schedular: schedular, mutex: &sync.RWMutex{}, connectMutex: &sync.RWMutex{}}
-	return client
+	return &FayeClient{
+		url:          url,
+		state:        UNCONNECTED,
+		schedular:    schedular,
+		mutex:        &sync.RWMutex{},
+		connectMutex: &sync.RWMutex{},
+	}
 }
 
-func (self *FayeClient) whileConnectingBlockUntilConnected() {
-	if self.state == CONNECTING {
+func (faye *FayeClient) whileConnectingBlockUntilConnected() {
+	if faye.state == CONNECTING {
 		for {
-			if self.state == CONNECTED {
+			if faye.state == CONNECTED {
 				break
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -87,15 +95,16 @@ func (self *FayeClient) whileConnectingBlockUntilConnected() {
 	}
 }
 
-func (self *FayeClient) handshake() {
+func (faye *FayeClient) handshake() {
 
-	if self.state == DISCONNECTED {
+	// uh oh spaghettios!
+	if faye.state == DISCONNECTED {
 		panic("Server told us not to reconnect")
 	}
 
 	// check if we need to wait before handshaking again
-	if self.nextHandshake > time.Now().Unix() {
-		sleepFor := time.Now().Unix() - self.nextHandshake
+	if faye.nextHandshake > time.Now().Unix() {
+		sleepFor := time.Now().Unix() - faye.nextHandshake
 
 		// wait for the duration the server told us
 		if sleepFor > 0 {
@@ -106,122 +115,141 @@ func (self *FayeClient) handshake() {
 
 	fmt.Println("Handshaking....")
 
-	t, err := SelectTransport(self, MANDATORY_CONNECTION_TYPES, []string{})
+	t, err := SelectTransport(faye, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
 		panic("No usable transports available")
 	}
 
-	self.mutex.Lock()
-	self.transport = t
-	self.transport.setUrl(self.url)
-	self.state = CONNECTING
-	self.mutex.Unlock()
+	faye.mutex.Lock()
+	faye.transport = t
+	faye.transport.setUrl(faye.url)
+	faye.state = CONNECTING
+	faye.mutex.Unlock()
 
 	handshakeParams := map[string]interface{}{"channel": "/meta/handshake",
 		"version":                  "1.0",
 		"supportedConnectionTypes": []string{"long-polling"}}
 
-	response, err := self.transport.send(handshakeParams)
+	response, err := faye.transport.send(handshakeParams)
 
 	if err != nil {
 		fmt.Println("Handshake failed. Retry in 10 seconds")
 
-		self.mutex.Lock()
-		self.state = UNCONNECTED
-		self.mutex.Unlock()
+		faye.mutex.Lock()
+		faye.state = UNCONNECTED
+		faye.mutex.Unlock()
 
 		time.Sleep(10 * time.Second)
-		self.handshake()
+		faye.handshake()
 
 		return
 	}
 
-	self.mutex.Lock()
-	oldClientId := self.clientId
-	self.clientId = response.clientId
-	self.state = CONNECTED
-	self.transport, err = SelectTransport(self, response.supportedConnectionTypes, []string{})
-	self.mutex.Unlock()
+	faye.mutex.Lock()
+	oldClientID := faye.clientID
+	faye.clientID = response.clientId
+	faye.state = CONNECTED
+	faye.transport, err = SelectTransport(faye, response.supportedConnectionTypes, []string{})
+	faye.mutex.Unlock()
 
 	if err != nil {
 		panic("Server does not support any available transports. Supported transports: " + strings.Join(response.supportedConnectionTypes, ","))
 	}
 
-	if oldClientId != self.clientId && len(self.subscriptions) > 0 {
-		fmt.Printf("Client ID changed (%s => %s), need to resubscribe %d subscriptions\n", oldClientId, self.clientId, len(self.subscriptions))
-		self.resubscribeAll()
+	if oldClientID != faye.clientID && len(faye.subscriptions) > 0 {
+		fmt.Printf("Client ID changed (%s => %s), %d invlaid subscriptions\n", oldClientID, faye.clientID, len(faye.subscriptions))
+		faye.resubscribeAll()
 	}
 }
 
-func (self *FayeClient) resubscribeAll() {
+// change the state in a thread safe manner
+func (faye *FayeClient) changeState(state int) {
+	faye.mutex.Lock()
+	defer faye.mutex.Unlock()
+	faye.state = state
+}
 
-	self.mutex.Lock()
-	subs := self.subscriptions
-	self.subscriptions = []Subscription{}
-	self.mutex.Unlock()
+// TODO: check the bayeux spec to see if the retry period counts for all requests
+// func (faye *FayeClient) makeRequest(data map[string]interface{}) (Response, error) {
+// 	faye.connectMutex.Lock()
+// 	defer faye.connectMutex.Unlock()
+//
+// 	// wait to retry if we were told to
+// 	if faye.nextRetry > time.Now().Unix() {
+// 		sleepFor := faye.nextRetry - time.Now().Unix()
+// 		if sleepFor > 0 {
+// 			// fmt.Println("Waiting for", sleepFor, "seconds before connecting")
+// 			time.Sleep(time.Duration(sleepFor) * time.Second)
+// 		}
+// 	}
+//
+// 	return faye.transport.send(subscriptionParams)
+// }
 
-	// TODO: redo this to work with channels
+// resubscribe all of the subscriptions
+func (faye *FayeClient) resubscribeAll() {
+
+	faye.mutex.Lock()
+	subs := faye.subscriptions
+	faye.subscriptions = []*Subscription{}
+	faye.mutex.Unlock()
+
+	fmt.Printf("Attempting to resubscribe %d subscriptions\n", len(subs))
 	for _, sub := range subs {
-		self.WaitSubscribe(sub.channel, sub.callback)
-		fmt.Println("Resubscribed to", sub.channel)
+
+		// fork off all the resubscribe requests
+		go func(sub *Subscription) {
+			for {
+				err := faye.requestSubscription(sub.channel)
+
+				// if it worked add it back to the list
+				if err == nil {
+					faye.mutex.Lock()
+					defer faye.mutex.Unlock()
+					faye.subscriptions = append(faye.subscriptions, sub)
+
+					fmt.Println("Resubscribed to", sub.channel)
+					return
+				}
+
+				time.Sleep(500 * time.Millisecond)
+			}
+		}(sub)
+
 	}
 }
 
-func (self *FayeClient) Subscribe(channel string) (promise SubscriptionPromise, err error) {
-	self.whileConnectingBlockUntilConnected()
-	if self.state == UNCONNECTED {
-		self.handshake()
+// requests a subscription from the server and returns error if the request failed
+func (faye *FayeClient) requestSubscription(channel string) error {
+	faye.whileConnectingBlockUntilConnected()
+	if faye.state == UNCONNECTED {
+		faye.handshake()
 	}
 
-	subscriptionParams := map[string]interface{}{"channel": "/meta/subscribe", "clientId": self.clientId, "subscription": channel, "id": "1"}
+	subscriptionParams := map[string]interface{}{"channel": "/meta/subscribe", "clientId": faye.clientID, "subscription": channel, "id": "1"}
 
-	msgChan := make(chan Message)
-	subscription := Subscription{channel: channel, msgChan: msgChan}
-
-	self.connectMutex.Lock()
-	res, err := self.transport.send(subscriptionParams)
-	self.connectMutex.Unlock()
-
-	self.handleAdvice(res.advice)
-
-	promise = SubscriptionPromise{subscription, nil, msgChan}
-
-	if err != nil {
-		promise.subError = err
-		return
-	}
+	faye.connectMutex.Lock()
+	defer faye.connectMutex.Lock()
+	res, err := faye.transport.send(subscriptionParams)
+	go faye.handleAdvice(res.advice)
 
 	if !res.successful {
 		// TODO: put more information in the error message about why it failed
-		err = errors.New("Response was unsuccessful")
-		promise.subError = err
-		return
-	}
-
-	// don't add to the subscriptions until we know it succeeded
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	self.subscriptions = append(self.subscriptions, subscription)
-
-	return
-}
-
-// Send a subscribe request, but if it fails keep retrying until it succeeds, then return a promise.
-// This will block until the subscription is successful.
-func (self *FayeClient) WaitSubscribe(channel string) SubscriptionPromise {
-
-	for {
-		promise, _ := self.Subscribe(channel)
-
-		if promise.Successful() {
-			return promise
+		errmsg := "Response was unsuccessful"
+		if err != nil {
+			errmsg += err.Error()
 		}
+		reserr := errors.New(errmsg)
+		return reserr
 	}
+
+	return nil
 }
 
-func (self *FayeClient) handleResponse(response Response) {
+// handles a response from the server
+func (faye *FayeClient) handleResponse(response Response) {
 	for _, message := range response.messages {
-		for _, subscription := range self.subscriptions {
+		for _, subscription := range faye.subscriptions {
 			matched, _ := filepath.Match(subscription.channel, message.Channel())
 			if matched {
 				go func() { subscription.msgChan <- message }()
@@ -230,30 +258,10 @@ func (self *FayeClient) handleResponse(response Response) {
 	}
 }
 
-func (self *FayeClient) connect() {
-	connectParams := map[string]interface{}{"channel": "/meta/connect", "clientId": self.clientId, "connectionType": self.transport.connectionType()}
-
-	// fmt.Println("Connecting... waiting for response...")
-	response, _ := self.transport.send(connectParams)
-
-	// fmt.Println("got a response")
-	// fmt.Printf("%+v\n", response)
-
-	// take the advice given to us by the server
-	self.handleAdvice(response.advice)
-
-	if response.successful {
-		go self.handleResponse(response)
-	} else {
-		self.mutex.Lock()
-		defer self.mutex.Unlock()
-		self.state = UNCONNECTED
-	}
-}
-
-func (self *FayeClient) handleAdvice(advice Advice) {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
+// handles advice from the server
+func (faye *FayeClient) handleAdvice(advice Advice) {
+	faye.mutex.Lock()
+	defer faye.mutex.Unlock()
 
 	if advice.reconnect != "" {
 		interval := advice.interval
@@ -261,57 +269,115 @@ func (self *FayeClient) handleAdvice(advice Advice) {
 		switch advice.reconnect {
 		case "retry":
 			if interval > 0 {
-				self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
+				faye.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
 			}
 		case "handshake":
-			self.state = UNCONNECTED // force a handshake on the next request
+			faye.state = UNCONNECTED // force a handshake on the next request
 			if interval > 0 {
-				self.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
+				faye.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
 			}
 		case "none":
-			self.state = DISCONNECTED
+			faye.state = DISCONNECTED
 			panic("Server advised not to reconnect")
 		}
 	}
 }
 
-func (self *FayeClient) Listen() {
+// connects to the server and waits for a response.  Will block if it is waiting
+// for the nextRetry time as advised by the server.  This locks the connectMutex
+// so other connections can't go through until the
+func (faye *FayeClient) connect() {
+	faye.connectMutex.Lock()
+	defer faye.connectMutex.Unlock()
+
+	connectParams := map[string]interface{}{"channel": "/meta/connect", "clientId": faye.clientID, "connectionType": faye.transport.connectionType()}
+	response, _ := faye.transport.send(connectParams)
+
+	// take the advice given to us by the server
+	faye.handleAdvice(response.advice)
+
+	if response.successful {
+		go faye.handleResponse(response)
+	} else {
+		faye.changeState(UNCONNECTED)
+	}
+}
+
+// Subscribe to a channel
+func (faye *FayeClient) Subscribe(channel string) (MessageWaiter, error) {
+
+	err := faye.requestSubscription(channel)
+	if err != nil {
+		return nil, err
+	}
+
+	msgChan := make(chan Message)
+	subscription := &Subscription{channel: channel, msgChan: msgChan}
+	waiter := &messageWaiter{msgChan}
+
+	// don't add to the subscriptions until we know it succeeded
+	faye.mutex.Lock()
+	defer faye.mutex.Unlock()
+	faye.subscriptions = append(faye.subscriptions, subscription)
+
+	return waiter, nil
+}
+
+// WaitSubscribe will send a subscribe request and block until the connection was successful
+func (faye *FayeClient) WaitSubscribe(channel string) MessageWaiter {
+
 	for {
-		self.whileConnectingBlockUntilConnected()
-		if self.state == UNCONNECTED {
-			self.handshake()
+		waiter, err := faye.Subscribe(channel)
+
+		if err == nil {
+			return waiter
+		}
+	}
+}
+
+// Publish a message to the given channel
+func (faye *FayeClient) Publish(channel string, data map[string]interface{}) {
+	faye.whileConnectingBlockUntilConnected()
+	if faye.state == UNCONNECTED {
+		faye.handshake()
+	}
+
+	publishParams := map[string]interface{}{"channel": channel, "data": data, "clientId": faye.clientID}
+	response, _ := faye.transport.send(publishParams)
+
+	faye.handleAdvice(response.advice)
+}
+
+// Listen starts listening for subscription requests from the server.  It is
+// blocking but can safely run in it's own goroutine.
+func (faye *FayeClient) Listen() {
+	for {
+		faye.whileConnectingBlockUntilConnected()
+		if faye.state == UNCONNECTED {
+			faye.handshake()
 		}
 
 		for {
-			if self.state != CONNECTED {
+			if faye.state != CONNECTED {
 				break
 			}
 
 			// wait to retry if we were told to
-			if self.nextRetry > time.Now().Unix() {
-				sleepFor := self.nextRetry - time.Now().Unix()
+			if faye.nextRetry > time.Now().Unix() {
+				sleepFor := faye.nextRetry - time.Now().Unix()
 				if sleepFor > 0 {
 					// fmt.Println("Waiting for", sleepFor, "seconds before connecting")
 					time.Sleep(time.Duration(sleepFor) * time.Second)
 				}
 			}
 
-			self.connect()
+			faye.connect()
 		}
 	}
 }
 
-func (self *FayeClient) Publish(channel string, data map[string]interface{}) {
-	self.whileConnectingBlockUntilConnected()
-	if self.state == UNCONNECTED {
-		self.handshake()
-	}
-	publishParams := map[string]interface{}{"channel": channel, "data": data, "clientId": self.clientId}
-	response, _ := self.transport.send(publishParams)
-
-	self.handleAdvice(response.advice)
-}
-
+// RegisterTransports allows for the dynamic loading of different transports
+// and the most suitable one will be selected
 func RegisterTransports(transports []Transport) {
 	registeredTransports = transports
 }
