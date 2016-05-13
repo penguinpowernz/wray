@@ -2,6 +2,7 @@ package wray
 
 import (
   // "strconv"
+  "encoding/json"
 )
 
 // Advice given by the Bayeux server about how to reconnect, etc
@@ -21,6 +22,7 @@ type Response struct {
   messages                 []Message
   advice                   Advice
   error                    error
+  jsonData                 []byte
 }
 
 // Models a message sent over Faye
@@ -45,7 +47,14 @@ func (self Message) Id() string {
   return self.id
 }
 
-func newResponse(data []interface{}) Response {
+// Decoder returns a JSON decoder loaded with the message bytes
+func (self Message) Decoder() *json.Decoder {
+  return json.NewDecoder(self.jsonData)
+}
+
+
+
+func newResponse(data []interface{}, jdata []byte) Response {
   headerData := data[0].(map[string]interface{})
   messagesData := data[1.:]
   messages := parseMessages(messagesData)
@@ -76,6 +85,7 @@ func newResponse(data []interface{}) Response {
     successful:               headerData["successful"].(bool),
     messages:                 messages,
     supportedConnectionTypes: supportedConnectionTypes,
+    jsonData:                 jdata,
   }
 
   parseAdvice(headerData, &res)

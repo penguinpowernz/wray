@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/json"
 )
 
 const (
@@ -33,6 +34,7 @@ var (
 type IMessage interface {
 	Data() map[string]interface{}
 	Channel() string
+	Decoder() *json.Decoder
 }
 
 // Subscription models a subscription, containing the channel it is subscribed
