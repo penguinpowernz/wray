@@ -4,10 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
- 	"strings"
+	"strings"
 	"sync"
 	"time"
-	"encoding/json"
 )
 
 const (
@@ -30,9 +29,10 @@ var (
 	registeredTransports       = []Transport{}
 )
 
+// Extension models a faye extension
 type Extension interface {
-  In(*BayeuxMessage)
-  Out(*BayeuxMessage)
+	In(Message)
+	Out(Message)
 }
 
 // Subscription models a subscription, containing the channel it is subscribed
@@ -70,7 +70,7 @@ type FayeClient struct {
 	nextHandshake int64
 	mutex         *sync.RWMutex // protects instance vars across goroutines
 	connectMutex  *sync.RWMutex // ensures a single connection to the server as per the protocol
-	extensions    []FayeExtension
+	extns         []Extension
 }
 
 // NewFayeClient returns a new client for interfacing to a faye server
@@ -116,21 +116,21 @@ func (faye *FayeClient) handshake() {
 
 	fmt.Println("Handshaking....")
 
-	t, err := SelectTransport(faye, MANDATORY_CONNECTION_TYPES, []string{})
+	t, err := selectTransport(faye, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
 		panic("No usable transports available")
 	}
 
 	faye.mutex.Lock()
 	faye.transport = t
-	faye.transport.setUrl(faye.url)
+	faye.transport.setURL(faye.url)
 	faye.state = CONNECTING
 	faye.mutex.Unlock()
 
-  msg := faye.newMessage("/meta/handshake")
-  msg.Version = "1.0"
-  msg.SupportedConnectionTypes = []string{"long-polling"}
-  response, _, err := faye.send(msg)
+	msg := faye.newMessage("/meta/handshake")
+	msg.Version = "1.0"
+	msg.SupportedConnectionTypes = []string{"long-polling"}
+	response, _, err := faye.send(msg)
 
 	if err != nil {
 		fmt.Println("Handshake failed. Retry in 10 seconds")
@@ -149,11 +149,11 @@ func (faye *FayeClient) handshake() {
 	oldClientID := faye.clientID
 	faye.clientID = response.ClientID()
 	faye.state = CONNECTED
-	faye.transport, err = SelectTransport(faye, response.SupportedConnectionTypes(), []string{})
+	faye.transport, err = selectTransport(faye, response.SupportedConnectionTypes(), []string{})
 	faye.mutex.Unlock()
 
 	if err != nil {
-		panic("Server does not support any available transports. Supported transports: " + strings.Join(response.supportedConnectionTypes, ","))
+		panic("Server does not support any available transports. Supported transports: " + strings.Join(response.SupportedConnectionTypes(), ","))
 	}
 
 	if oldClientID != faye.clientID && len(faye.subscriptions) > 0 {
@@ -226,14 +226,14 @@ func (faye *FayeClient) requestSubscription(channel string) error {
 		faye.handshake()
 	}
 
-  msg := faye.newMessage("/meta/subscribe")
-  msg.Subscription = channel
+	msg := faye.newMessage("/meta/subscribe")
+	msg.Subscription = channel
 
-  // TODO: check if the protocol allows a subscribe during an active connect request
-  response, _, err := faye.send(msg)
-  if err != nil {
-    return err
-  }
+	// TODO: check if the protocol allows a subscribe during an active connect request
+	response, _, err := faye.send(msg)
+	if err != nil {
+		return err
+	}
 
 	go faye.handleAdvice(response.Advice())
 
@@ -245,7 +245,7 @@ func (faye *FayeClient) requestSubscription(channel string) error {
 		}
 
 		if response.HasError() {
-		  errmsg += " / " + response.Error()
+			errmsg += " / " + response.Error()
 		}
 		reserr := errors.New(errmsg)
 		return reserr
@@ -255,16 +255,16 @@ func (faye *FayeClient) requestSubscription(channel string) error {
 }
 
 func (faye *FayeClient) newMessage(channel string) *message {
-  return &message{
-    ClientID: faye.clientId,
-    Channel: channel,
-  }
+	return &message{
+		ClientID: faye.clientID,
+		Channel:  channel,
+	}
 }
 
 // handles a response from the server
 func (faye *FayeClient) handleMessages(msgs []Message) {
 	for _, message := range msgs {
-	  faye.runExtensions("in", message)
+		faye.runExtensions("in", message)
 		for _, subscription := range faye.subscriptions {
 			matched, _ := filepath.Match(subscription.channel, message.Channel())
 			if matched {
@@ -306,64 +306,62 @@ func (faye *FayeClient) connect() {
 	faye.connectMutex.Lock()
 	defer faye.connectMutex.Unlock()
 
-  msg := newMessage("/meta/connect")
-  msg.ConnectionType = faye.transport.connectionType()
+	msg := faye.newMessage("/meta/connect")
+	msg.ConnectionType = faye.transport.connectionType()
 
-
-  response, messages, err := faye.send(msg)
-  if err != nil {
-    fmt.Println(response.Error())
-  }
+	response, messages, err := faye.send(msg)
+	if err != nil {
+		fmt.Println(response.Error())
+	}
 
 	go faye.handleAdvice(response.Advice())
 
-  if response.OK() {
-		go faye.handleResponse(response)
+	if response.OK() {
+		go faye.handleMessages(messages)
 	} else {
-	  fmt.Println(response.Error())
+		fmt.Println(response.Error())
 		faye.changeState(UNCONNECTED)
 	}
-
 
 }
 
 func (faye *FayeClient) send(msg *message) (Response, []Message, error) {
-  if msg.ClientID == "" && msg.Channel != "/meta/handshake" && faye.clientID != "" {
-    msg.ClientID = faye.ClientID
-  }
+	if msg.ClientID == "" && msg.Channel != "/meta/handshake" && faye.clientID != "" {
+		msg.ClientID = faye.clientID
+	}
 
-  message = Message(msgWrapper{msg})
-  faye.runExtensions("out", message)
+	message := Message(msgWrapper{msg})
+	faye.runExtensions("out", message)
 
-  if message.Error() != "" {
-    return nil, []Message{}, message
-  }
+	if message.HasError() {
+		return nil, []Message{}, message // Message has Error() so can be returned as an error
+	}
 
-  dec, err := faye.transport.send(json.NewEncoder(message))
-  if err != nil {
-    return nil, []Message{}, nil
-  }
+	dec, err := faye.transport.send(message)
+	if err != nil {
+		return nil, []Message{}, nil
+	}
 
-  r, m, err := decodeResponse(dec)
-  faye.runExtensions("in", r)
-  return r, m, err
+	r, m, err := decodeResponse(dec)
+	faye.runExtensions("in", r.(Message))
+	return r, m, err
 }
 
+// AddExtension adds an extension to the Faye Client
 func (faye *FayeClient) AddExtension(extn Extension) {
-  faye.extns = append(faye.extns, extn)
+	faye.extns = append(faye.extns, extn)
 }
 
 func (faye *FayeClient) runExtensions(direction string, msg Message) {
-  for _, extn := range faye.extns {
-    switch direction {
-      case "out":
-        extn.Out(msg)
-      case "in":
-        extn.In(msg)
-    }
-  }
+	for _, extn := range faye.extns {
+		switch direction {
+		case "out":
+			extn.Out(msg)
+		case "in":
+			extn.In(msg)
+		}
+	}
 }
-
 
 // Subscribe to a channel
 func (faye *FayeClient) Subscribe(channel string) (MessageWaiter, error) {
@@ -404,22 +402,21 @@ func (faye *FayeClient) Publish(channel string, data map[string]interface{}) err
 		faye.handshake()
 	}
 
-  msg := faye.newMessage(channel)
-  msg.Data =data
+	msg := faye.newMessage(channel)
+	msg.Data = data
 	response, _, err := faye.send(msg)
 	if err != nil {
-	  return err
+		return err
 	}
 
 	go faye.handleAdvice(response.Advice())
 
-  if !response.OK() {
-    return fmt.Errorf("Response was not successful")
-  }
+	if !response.OK() {
+		return fmt.Errorf("Response was not successful")
+	}
 
 	return nil
 }
-
 
 // Listen starts listening for subscription requests from the server.  It is
 // blocking but can safely run in it's own goroutine.

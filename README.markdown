@@ -4,11 +4,11 @@ Wray is a client for the [Faye](http://faye.jcoglan.com) publish-subscribe messa
 
 ## Current status
 
-In progress.
+Beta.
 
 ## Getting Started
 
-Wray is only a client for Faye. You will need to setup a server using Ruby or Node.js first. Instructions that can be found on the [Faye project pages](http://faye.jcoglan.com/).
+Wray is only a client for Faye. You will need to setup a server using Ruby or Node.js first. Instructions that can be found on the [Faye project pages](http://faye.jcoglan.com/).  Simple examples are available in the examples folder.
 
 ### Subscribing to channels
 
@@ -23,7 +23,7 @@ import "time"
 
 func main() {
   //register the types of transport you want available. Only long-polling is currently supported
-  wray.RegisterTransports([]gofaye.Transport{ &gofaye.HttpTransport{} })
+  wray.RegisterTransports([]wray.Transport{ &wray.HTTPTransport{} })
 
   //create a new client
   client := wray.NewFayeClient("http://localhost:5000/faye")
@@ -37,7 +37,7 @@ func main() {
 
   go func() {
     for {
-      msg := promise.WaitForMessage()
+      msg := subscription.WaitForMessage()
       fmt.Println("-------------------------------------------")
       fmt.Println(msg.Data())
     }
@@ -45,7 +45,7 @@ func main() {
 
   // guarantee a subscription works by blocking until subscription request is received by server
   promise := client.WaitSubscribe("/foo/*")
-  msg := promise.WaitForMessage()
+  msg := subscription.WaitForMessage()
   fmt.Println(msg.Data())
 }
 ```
@@ -60,7 +60,7 @@ import "fmt"
 
 func main() {
   //register the types of transport you want available. Only long-polling is currently supported
-  wray.RegisterTransports([]wray.Transport{ &gofaye.HttpTransport{} })
+  wray.RegisterTransports([]wray.Transport{ &wray.HTTPTransport{} })
 
   //create a new client
   client := wray.NewFayeClient("http://localhost:5000/faye")
@@ -68,30 +68,67 @@ func main() {
   params := map[string]interface{}{"hello": "from golang"}
 
   //send message to server
-  client.Publish("/foo", params)
+  if err := client.Publish("/foo", params); err != nil {
+    fmt.Println(err)
+  }
 }
 ```
 
-Simple examples are availabe in the examples folder.
+### Extensions
+
+Extension must satisfy the `faye.Extenstion` interface:
+
+```go
+type Extension interface {
+  In(Message)
+  Out(Message)
+}
+```
+
+Then you can write your extension like so:
+
+```go
+
+wray.RegisterTransports([]wray.Transport{ &wray.HTTPTransport{} })
+
+type authExtension struct {
+  token string
+}
+
+// In does nothing in this extension, but is needed to satisy the interface
+func (e *authExtension) In(msg wray.Message) {}
+
+// Out adds the authentication token to the messages ext field
+func (e *authExtension) Out(msg wray.Message) {
+  ext := msg.Ext()
+  ext["token"] = e.token
+}
+
+func main() {
+  faye := wray.NewFayeClient("http://localhost:8000/faye")
+  faye.AddExtension(authExtension{"Y29tZSBhdCBtZSBicm8K"})
+
+  // this message will now reach the server with the authentication token attached
+  faye.Publish("/test", map[string]interface{}{"hello": "world"})
+}
+```
 
 ## Future Work
 
 There is still a lot to do to bring Wray in line with Faye functionality. This is a less than exhaustive list of work to be completed:-
 
-- fix the resubscribe after rehandshake logic to work with channels instead of callbacks
-- web socket support
-- eventsource support
-- logging
-- middleware additions
-- correctly handle disconnect and server down
-- promises for subscription and publishing
-- automated integrations test to ensure Wray continues to work with Faye
+- [x] fix the resubscribe after rehandshake logic to work with channels instead of callbacks
+- [] web socket support
+- [] eventsource support
+- [] logging
+- [] stop having to register transports
+- [] middleware additions
+- [x] extensions support
+- [] correctly handle disconnect and server down
+- [] promises for subscription and publishing
+- [] automated integrations test to ensure Wray continues to work with Faye
 
-## Bugs/Features/Prase
-
-It you find any bugs or have some feature requests please add an issue on the repository. Or if you just want to get in touch and tell me how awesome wray is you can get me on twitter @colin_gemmell or drop me an email at pythonandchips{at}gmail.com.
-
-## Contributing to Wray
+## Contributing
 
 * Check out the latest master to make sure the feature hasn't been implemented or the bug hasn't been fixed yet
 * Check out the issue tracker to make sure someone already hasn't requested it and/or contributed it
