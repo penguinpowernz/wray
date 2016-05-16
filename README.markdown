@@ -4,7 +4,7 @@ Wray is a client for the [Faye](http://faye.jcoglan.com) publish-subscribe messa
 
 ## Current status
 
-Beta.
+Beta.  Should work but might be broken in some places.
 
 ## Getting Started
 
@@ -118,15 +118,15 @@ func main() {
 There is still a lot to do to bring Wray in line with Faye functionality. This is a less than exhaustive list of work to be completed:-
 
 - [x] fix the resubscribe after rehandshake logic to work with channels instead of callbacks
-- [] web socket support
-- [] eventsource support
-- [] logging
-- [] stop having to register transports
-- [] middleware additions
+- [ ] web socket support
+- [ ] eventsource support
+- [ ] logging
+- [ ] stop having to register transports
+- [ ] middleware additions
 - [x] extensions support
-- [] correctly handle disconnect and server down
-- [] promises for subscription and publishing
-- [] automated integrations test to ensure Wray continues to work with Faye
+- [ ] correctly handle disconnect and server down
+- [ ] promises for subscription and publishing
+- [ ] automated integrations test to ensure Wray continues to work with Faye
 
 ## Contributing
 
