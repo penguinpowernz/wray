@@ -7,7 +7,7 @@ import (
 type Transport interface {
 	isUsable(string) bool
 	connectionType() string
-	send(map[string]interface{}) (Response, error)
+	send(encoder) (decoder, error)
 	setUrl(string)
 }
 

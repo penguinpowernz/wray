@@ -5,152 +5,97 @@ import (
   "encoding/json"
 )
 
-// Advice given by the Bayeux server about how to reconnect, etc
-type Advice struct {
-  interval int
-  reconnect string
-  timeout int
-}
-
-// Models a Bayeux response object
-type Response struct {
-  id                       string
-  channel                  string
-  successful               bool
-  clientId                 string
-  supportedConnectionTypes []string
-  messages                 []Message
-  advice                   Advice
-  error                    error
-  jsonData                 []byte
-}
-
 // Models a message sent over Faye
-type Message struct {
-  channel string
-  id      string
-  data    map[string]interface{}
+type Message interface {
+  Channel() string
+  ID()      string
+  Data()    map[string]interface{}
+  Ext()     map[string]interface{}
+  ConnectionType() string
+  Decode(interface{}) error
 }
 
-// returns the data in the message
-func (self Message) Data() map[string]interface{} {
-  return self.data
+// Models a response received from the Faye server
+type Response() interface {
+  Successful() bool
+  Channel()    string
+  Error()      string
+  Advice()     Advice
+  ClientID()   string
+  SupportedConnectionTypes() []string
 }
 
-// returns the channel the message was sent to
-func (self Message) Channel() string {
-  return self.channel
+// Advice given by the Bayeux server about how to reconnect, etc
+type Advice interface {
+  Interval() int
+  Reconnect() string
+  Timeout() int
 }
 
-// returns the ID of the message
-func (self Message) Id() string {
-  return self.id
+// Models a Bayeux message that can be for sending or receiving
+// TODO: omitempty
+type message struct {
+  ID                       string `json:"id"`
+  Channel                  string `json:"channel"`
+  Successful               bool `json:"successful"`
+  ClientID                 string `json:"clientId"`
+  SupportedConnectionTypes []string `json:"supportedConnectionTypes"`
+  Data                     map[string]interface{}
+  Advice                   advice `json:"advice"`
+  Error                    error `json:"error"`
+  decoder                  decoder
+  Ext                      map[string]interface{} `json:"ext"`
+  ConnectionType           string `json:"connectionType"`
+  Subscription             string `json:"subscription"`
+  Version                  string `json:"version"`
 }
 
-// Decoder returns a JSON decoder loaded with the message bytes
-func (self Message) Decoder() *json.Decoder {
-  return json.NewDecoder(self.jsonData)
+type msgWrapper struct {
+  msg *message
 }
 
 
+func (w msgWrapper) Data() map[string]interface{} { return w.msg.Data }
+func (w msgWrapper) ID() string { return w.msg.ID }
+func (w msgWrapper) Channel() string { return w.msg.Channel }
 
-func newResponse(data []interface{}, jdata []byte) Response {
-  headerData := data[0].(map[string]interface{})
-  messagesData := data[1.:]
-  messages := parseMessages(messagesData)
+// Ext returns a map of extension data.  As it is a map (and thus a pointer), changes
+// to the returned object will modify the content of this field in the message
+func (w msgWrapper) Ext() map[string]interface{} { return w.msg.Ext }
+func (w msgWrapper) OK() bool { return w.msg.Successful }
+func (w msgWrapper) Error() string { return w.msg.Error }
+func (w msgWrapper) HasError() bool { return w.msg.Error == "" }
+func (w msgWrapper) SetError(msg string) { w.msg.Error = msg }
+func (w msgWrapper) ConnectionType() string { return w.msg.ConnectionType }
+func (w msgWrapper) Subscription() string { return w.msg.Subscription }
+func (w msgWrapper) Advice() Advice { return w.msg.Advice }
+func (w msgWrapper) Version() string { return w.msg.Version }
+func (w msgWrapper) SupportedConnectionTypes() []string { return w.msg.SupportedConnectionTypes }
+func (w msgWrapper) ConnectionType() string { return w.msg.ConnectionType }
+func (w msgWrapper) ClientID() string { return w.msg.ClientID }
 
-  var id string
-  if headerData["id"] != nil {
-    id = headerData["id"].(string)
+// Decodes the message data into the given pointer
+func (w msgWrapper) Decode(obj interface{}) {
+  bytes, err := json.Marshal(w.Data())
+  if err != nil {
+    return err
   }
 
-  supportedConnectionTypes := []string{}
-
-  if headerData["supportedConnectionTypes"] != nil {
-    d := headerData["supportedConnectionTypes"].([]interface{})
-    for _, sct := range d {
-      supportedConnectionTypes = append(supportedConnectionTypes, sct.(string))
-    }
-  }
-
-  var clientId string
-  if headerData["clientId"] != nil {
-    clientId = headerData["clientId"].(string)
-  }
-
-  res := Response{
-    id:                       id,
-    clientId:                 clientId,
-    channel:                  headerData["channel"].(string),
-    successful:               headerData["successful"].(bool),
-    messages:                 messages,
-    supportedConnectionTypes: supportedConnectionTypes,
-    jsonData:                 jdata,
-  }
-
-  parseAdvice(headerData, &res)
-
-  return res
+  return json.NewDecoder(bytes).Decode(obj)
 }
 
-// parses advice from a Bayeux response
-func parseAdvice(data map[string]interface{}, res *Response) {
-
-  _advice, exists := data["advice"]
-
-  if !exists {
-    return
+func decodeResponse(dec decoder) (Response, []Message, error) {
+  var msgs = []Message{}
+  if err := dec.Decode(&jsonData); err != nil {
+    return nil, msgs, err
   }
 
-  advice := _advice.(map[string]interface{})
-  
-  reconnect, exists := advice["reconnect"]
-  if exists {
-    res.advice.reconnect = reconnect.(string)
-  }
-
-  interval, exists := advice["interval"]
-  if exists {
-    res.advice.interval = int(interval.(float64))
-  }
-
-  timeout, exists := advice["timeout"]
-  if exists {
-    res.advice.timeout = int(timeout.(float64))
-  }
+  return messages[0], messages[0:], nil
 }
 
-// parses multiple messages from a Map
-func parseMessages(data []interface{}) []Message {
-  messages := []Message{}
-
-  for _, messageData := range data {
-
-    if messageData == nil {
-      continue;
-    }
-
-    m := messageData.(map[string]interface{})
-    var id string
-
-    if m["id"] != nil {
-      id = m["id"].(string)
-    }
-
-    
-    data, ok := m["data"].(map[string]interface{})
-    if !ok {
-      data = map[string]interface{}{}
-    }
-
-    message := Message{
-      channel: m["channel"].(string),
-      id:      id,
-      data:    data,
-    }
-
-    messages = append(messages, message)
-  }
-
-  return messages
+type advice struct {
+  Reconnect string `json:"reconnect"`
+  Interval float64 `json:"interval"`
+  Timeout float64 `json:"timeout"`
 }
+

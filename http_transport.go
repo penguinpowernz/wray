@@ -28,22 +28,27 @@ func (self HttpTransport) connectionType() string {
 	return "long-polling"
 }
 
-func (self HttpTransport) send(data map[string]interface{}) (Response, error) {
-	dataBytes, _ := json.Marshal(data)
+type decoder interface{
+  Decode(interface{}) error
+}
+
+type encoder interface{
+  Encode() ([]byte, error)
+}
+
+func (self HttpTransport) send(enc encoder) (decoder, error) {
+	dataBytes, _ := enc.Encode()
 	buffer := bytes.NewBuffer(dataBytes)
 	responseData, err := http.Post(self.url, "application/json", buffer)
 	if err != nil {
-		return Response{}, err
+		return nil, err
 	}
 	if responseData.StatusCode != 200 {
-		return Response{}, errors.New(responseData.Status)
+		return nil, errors.New(responseData.Status)
 	}
 	readData, _ := ioutil.ReadAll(responseData.Body)
 	responseData.Body.Close()
-	var jsonData []interface{}
-	json.Unmarshal(readData, &jsonData)
-	response := newResponse(jsonData, readData)
-	return response, nil
+	return json.NewDecoder(readData), nil
 }
 
 func (self *HttpTransport) setUrl(url string) {
