@@ -122,10 +122,10 @@ There is still a lot to do to bring Wray in line with Faye functionality. This i
 - [ ] eventsource support
 - [ ] logging
 - [ ] stop having to register transports
-- [ ] middleware additions
+- [ ] middleware additions ???
 - [x] extensions support
 - [ ] correctly handle disconnect and server down
-- [ ] promises for subscription and publishing
+- [ ] promises for subscription and publishing ???
 - [ ] automated integrations test to ensure Wray continues to work with Faye
 
 ## Contributing
