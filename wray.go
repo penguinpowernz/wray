@@ -3,6 +3,7 @@ package wray
 import (
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -58,12 +59,35 @@ func (w messageWaiter) WaitForMessage() Message {
 	return <-w.msgChan
 }
 
+type logger interface {
+	Infof(f string, a ...interface{})
+	Errorf(f string, a ...interface{})
+	Debugf(f string, a ...interface{})
+	Warnf(f string, a ...interface{})
+}
+
+type fayeLogger struct{}
+
+func (l fayeLogger) Infof(f string, a ...interface{}) {
+	log.Printf("[INFO]  : "+f, a...)
+}
+func (l fayeLogger) Errorf(f string, a ...interface{}) {
+	log.Printf("[ERROR] : "+f, a...)
+}
+func (l fayeLogger) Debugf(f string, a ...interface{}) {
+	log.Printf("[DEBUG] : "+f, a...)
+}
+func (l fayeLogger) Warnf(f string, a ...interface{}) {
+	log.Printf("[WARN]  : "+f, a...)
+}
+
 // FayeClient models a faye client
 type FayeClient struct {
 	state         int
 	url           string
 	subscriptions []*Subscription
 	transport     Transport
+	log           logger
 	clientID      string
 	schedular     Schedular
 	nextRetry     int64
@@ -82,7 +106,14 @@ func NewFayeClient(url string) *FayeClient {
 		schedular:    schedular,
 		mutex:        &sync.RWMutex{},
 		connectMutex: &sync.RWMutex{},
+		log:          fayeLogger{},
 	}
+}
+
+// AttachLogger attaches a logger to the faye client, and replaces the default
+// logger which just puts to stdout
+func (faye *FayeClient) AttachLogger(log logger) {
+	faye.log = log
 }
 
 func (faye *FayeClient) whileConnectingBlockUntilConnected() {
@@ -100,7 +131,7 @@ func (faye *FayeClient) handshake() {
 
 	// uh oh spaghettios!
 	if faye.state == DISCONNECTED {
-		panic("Server told us not to reconnect")
+		faye.log.Errorf("Server told us not to reconnect")
 	}
 
 	// check if we need to wait before handshaking again
@@ -109,16 +140,16 @@ func (faye *FayeClient) handshake() {
 
 		// wait for the duration the server told us
 		if sleepFor > 0 {
-			fmt.Println("Waiting for", sleepFor, "seconds before next handshake")
+			faye.log.Debugf("Waiting for", sleepFor, "seconds before next handshake")
 			time.Sleep(time.Duration(sleepFor) * time.Second)
 		}
 	}
 
-	fmt.Println("Handshaking....")
+	faye.log.Debugf("Handshaking....")
 
 	t, err := selectTransport(faye, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
-		panic("No usable transports available")
+		faye.log.Errorf("No usable transports available")
 	}
 
 	faye.mutex.Lock()
@@ -133,7 +164,7 @@ func (faye *FayeClient) handshake() {
 	response, _, err := faye.send(msg)
 
 	if err != nil {
-		fmt.Println("Handshake failed. Retry in 10 seconds")
+		faye.log.Errorf("Handshake failed. Retry in 10 seconds")
 
 		faye.mutex.Lock()
 		faye.state = UNCONNECTED
@@ -153,11 +184,11 @@ func (faye *FayeClient) handshake() {
 	faye.mutex.Unlock()
 
 	if err != nil {
-		panic("Server does not support any available transports. Supported transports: " + strings.Join(response.SupportedConnectionTypes(), ","))
+		faye.log.Errorf("Server does not support any available transports. Supported transports: " + strings.Join(response.SupportedConnectionTypes(), ","))
 	}
 
 	if oldClientID != faye.clientID && len(faye.subscriptions) > 0 {
-		fmt.Printf("Client ID changed (%s => %s), %d invlaid subscriptions\n", oldClientID, faye.clientID, len(faye.subscriptions))
+		faye.log.Warnf("Client ID changed (%s => %s), %d invlaid subscriptions\n", oldClientID, faye.clientID, len(faye.subscriptions))
 		faye.resubscribeAll()
 	}
 }
@@ -194,7 +225,7 @@ func (faye *FayeClient) resubscribeAll() {
 	faye.subscriptions = []*Subscription{}
 	faye.mutex.Unlock()
 
-	fmt.Printf("Attempting to resubscribe %d subscriptions\n", len(subs))
+	faye.log.Debugf("Attempting to resubscribe %d subscriptions\n", len(subs))
 	for _, sub := range subs {
 
 		// fork off all the resubscribe requests
@@ -208,7 +239,7 @@ func (faye *FayeClient) resubscribeAll() {
 					defer faye.mutex.Unlock()
 					faye.subscriptions = append(faye.subscriptions, sub)
 
-					fmt.Println("Resubscribed to", sub.channel)
+					faye.log.Debugf("Resubscribed to", sub.channel)
 					return
 				}
 
@@ -294,7 +325,7 @@ func (faye *FayeClient) handleAdvice(advice Advice) {
 			}
 		case "none":
 			faye.state = DISCONNECTED
-			panic("Server advised not to reconnect")
+			faye.log.Errorf("Server advised not to reconnect")
 		}
 	}
 }
@@ -311,7 +342,7 @@ func (faye *FayeClient) connect() {
 
 	response, messages, err := faye.send(msg)
 	if err != nil {
-		fmt.Println(response.Error())
+		faye.log.Errorf("Error while sending connect request: %s", response.Error())
 	}
 
 	go faye.handleAdvice(response.Advice())
@@ -319,7 +350,7 @@ func (faye *FayeClient) connect() {
 	if response.OK() {
 		go faye.handleMessages(messages)
 	} else {
-		fmt.Println(response.Error())
+		faye.log.Errorf("Error in response to connect request: %s", response.Error())
 		faye.changeState(UNCONNECTED)
 	}
 
