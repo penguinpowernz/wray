@@ -375,12 +375,26 @@ func (faye *FayeClient) Subscribe(channel string) (MessageWaiter, error) {
 	subscription := &Subscription{channel: channel, msgChan: msgChan}
 	waiter := &messageWaiter{msgChan}
 
-	// don't add to the subscriptions until we know it succeeded
 	faye.mutex.Lock()
 	defer faye.mutex.Unlock()
 	faye.subscriptions = append(faye.subscriptions, subscription)
 
 	return waiter, nil
+}
+
+// SubscribeWithChan allows giving a custom go channel to receive messages through
+func (faye *FayeClient) SubscribeWithChan(channel string, msgChan chan Message) error {
+	err := faye.requestSubscription(channel)
+	if err != nil {
+		return nil, err
+	}
+
+	subscription := &Subscription{channel: channel, msgChan: msgChan}
+	faye.mutex.Lock()
+	defer faye.mutex.Unlock()
+	faye.subscriptions = append(faye.subscriptions, subscription)
+
+  return nil
 }
 
 // WaitSubscribe will send a subscribe request and block until the connection was successful
@@ -394,6 +408,19 @@ func (faye *FayeClient) WaitSubscribe(channel string) MessageWaiter {
 		}
 	}
 }
+
+// WaitSubscribeWithChan will send a subscribe request with custom go channel and block until the connection was successful
+func (faye *FayeClient) WaitSubscribeWithChan(channel string, msgChan chan Message) MessageWaiter {
+
+	for {
+		waiter, err := faye.SubscribeWithChan(channel, msgChan)
+
+		if err == nil {
+			return waiter
+		}
+	}
+}
+
 
 // Publish a message to the given channel
 func (faye *FayeClient) Publish(channel string, data map[string]interface{}) error {
