@@ -1,6 +1,8 @@
 # Wray, faye client for Go
 
-Wray is a client for the [Faye](http://faye.jcoglan.com) publish-subscribe messaging service by [James Coglan](https://twitter.com/jcoglan).
+Wray is a client for the [Faye](http://faye.jcoglan.com) publish-subscribe messaging service by [James Coglan](https://twitter.com/jcoglan).  Originally
+created by [pythonandchips](https://github.com/pythonandchips), this fork is now maintained by Autogrow Systems Limited to serve internal application
+development.
 
 ## Current status
 
@@ -123,9 +125,10 @@ There is still a lot to do to bring Wray in line with Faye functionality. This i
 - [ ] web socket support
 - [ ] eventsource support
 - [ ] logging
+- [ ] don't panic!
 - [ ] stop having to register transports
 - [ ] middleware additions ???
-- [ ] subscribe by giving a channel name and a go channel
+- [x] subscribe by giving a channel name and a go channel
 - [x] extensions support
 - [ ] correctly handle disconnect and server down
 - [ ] promises for subscription and publishing ???
@@ -142,7 +145,7 @@ There is still a lot to do to bring Wray in line with Faye functionality. This i
 
 ## Copyright
 
-Copyright (c) 2014 Colin Gemmell
+Copyright (c) 2016 Colin Gemmell, Robert McLeod, Autogrow Systems Limited
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
