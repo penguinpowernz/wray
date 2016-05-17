@@ -30,23 +30,25 @@ func main() {
   go client.Listen()
 
   //subscribe to the channels you want to listen to
-  promise, err := client.Subscribe("/foo")
+  subscription, err := client.Subscribe("/foo")
   if err != nil {
     fmt.Println("Subscription to /foo failed", err)
   }
 
-  go func() {
-    for {
-      msg := subscription.WaitForMessage()
-      fmt.Println("-------------------------------------------")
-      fmt.Println(msg.Data())
-    }
-  }()
+  go printMessages(subscription)
 
-  // guarantee a subscription works by blocking until subscription request is received by server
-  promise := client.WaitSubscribe("/foo/*")
-  msg := subscription.WaitForMessage()
+  // guarantee a subscription works by blocking until successful subscription response is received from server
+  subscription2 := client.WaitSubscribe("/foo/*")
+  msg := subscription2.WaitForMessage()
   fmt.Println(msg.Data())
+}
+
+func printMessages(sub wray.Subscription) {
+  for {
+    msg := subscription.WaitForMessage() // block until a message is received
+    fmt.Println("-------------------------------------------")
+    fmt.Println(msg.Data())
+  }
 }
 ```
 
