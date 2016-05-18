@@ -22,7 +22,7 @@ func (fake FakeHTTPTransport) connectionType() string {
 	return "long-polling"
 }
 
-func (fake *FakeHTTPTransport) send(msg Message) (decoder, error) {
+func (fake *FakeHTTPTransport) send(json.Marshaler) (decoder, error) {
 	fake.timesSent++
 	return json.NewDecoder(bytes.NewBuffer([]byte{})), fake.err
 }

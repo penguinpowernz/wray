@@ -1,6 +1,7 @@
 package wray
 
 import (
+	"encoding/json"
 	"errors"
 )
 
@@ -12,7 +13,7 @@ type decoder interface {
 type Transport interface {
 	isUsable(string) bool
 	connectionType() string
-	send(Message) (decoder, error)
+	send(json.Marshaler) (decoder, error)
 	setURL(string)
 }
 

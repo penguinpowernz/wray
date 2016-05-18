@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	// "fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 )
@@ -28,9 +30,14 @@ func (t HTTPTransport) connectionType() string {
 	return "long-polling"
 }
 
-func (t HTTPTransport) send(msg Message) (decoder, error) {
-	buffer := bytes.NewBuffer([]byte{})
-	json.NewEncoder(buffer).Encode(msg)
+func (t HTTPTransport) send(msg json.Marshaler) (decoder, error) {
+	b, err := json.Marshal(msg)
+
+	if err != nil {
+		return nil, err
+	}
+
+	buffer := bytes.NewBuffer(b)
 	responseData, err := http.Post(t.url, "application/json", buffer)
 	if err != nil {
 		return nil, err
@@ -39,7 +46,12 @@ func (t HTTPTransport) send(msg Message) (decoder, error) {
 		return nil, errors.New(responseData.Status)
 	}
 	defer responseData.Body.Close()
-	return json.NewDecoder(responseData.Body), nil
+	jsonData, err := ioutil.ReadAll(responseData.Body)
+	if err != nil {
+		return nil, err
+	}
+	// fmt.Println("BUFFFERERERERER!!! ", string(jsonData))
+	return json.NewDecoder(bytes.NewBuffer(jsonData)), nil
 }
 
 func (t *HTTPTransport) setURL(url string) {
