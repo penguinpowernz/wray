@@ -1,4 +1,4 @@
-package simplesub
+package main
 
 import (
 	"fmt"
