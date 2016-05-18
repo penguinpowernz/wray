@@ -18,6 +18,7 @@ type Message interface {
 	HasError() bool
 	SetError(string)
 	Error() string
+	MarshalJSON() ([]byte, error)
 }
 
 // Response models a response received from the Faye server
@@ -86,6 +87,10 @@ func (w msgWrapper) Decode(obj interface{}) error {
 	}
 
 	return json.NewDecoder(bytes.NewBuffer(b)).Decode(obj)
+}
+
+func (w msgWrapper) MarshalJSON() ([]byte, error) {
+	return json.Marshal(w.msg)
 }
 
 func decodeResponse(dec decoder) (Response, []Message, error) {
