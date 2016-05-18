@@ -398,6 +398,11 @@ func (faye *FayeClient) send(msg *message) (Response, []Message, error) {
 
 	r, m, err := decodeResponse(dec)
 	faye.runExtensions("in", r.(Message))
+
+	if r != nil {
+		faye.runExtensions("in", r.(Message))
+	}
+
 	return r, m, err
 }
 
