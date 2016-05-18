@@ -95,8 +95,14 @@ func (w msgWrapper) MarshalJSON() ([]byte, error) {
 
 func decodeResponse(dec decoder) (Response, []Message, error) {
 	var msgs = []Message{}
-	if err := dec.Decode(&msgs); err != nil {
+
+	var raw = []*message{}
+	if err := dec.Decode(&raw); err != nil {
 		return nil, msgs, err
+	}
+
+	for _, msg := range raw {
+		msgs = append(msgs, Message(msgWrapper{msg}))
 	}
 
 	return msgs[0].(Response), msgs[1:], nil
