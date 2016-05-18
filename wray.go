@@ -58,8 +58,8 @@ type messageWaiter struct {
 func (w messageWaiter) WaitForMessage() Message {
 	return <-w.msgChan
 }
-
-type logger interface {
+// Logger is the interface that faye uses for it's logger
+type Logger interface {
 	Infof(f string, a ...interface{})
 	Errorf(f string, a ...interface{})
 	Debugf(f string, a ...interface{})
@@ -87,7 +87,6 @@ type FayeClient struct {
 	url           string
 	subscriptions []*Subscription
 	transport     Transport
-	log           logger
 	clientID      string
 	schedular     Schedular
 	nextRetry     int64
@@ -95,6 +94,7 @@ type FayeClient struct {
 	mutex         *sync.RWMutex // protects instance vars across goroutines
 	connectMutex  *sync.RWMutex // ensures a single connection to the server as per the protocol
 	extns         []Extension
+	log            Logger
 }
 
 // NewFayeClient returns a new client for interfacing to a faye server
@@ -111,8 +111,10 @@ func NewFayeClient(url string) *FayeClient {
 }
 
 // SetLogger attaches a logger to the faye client, and replaces the default
+
+// SetLogger attaches a Logger to the faye client, and replaces the default
 // logger which just puts to stdout
-func (faye *FayeClient) SetLogger(log logger) {
+func (faye *FayeClient) SetLogger(log Logger) {
 	faye.log = log
 }
 
