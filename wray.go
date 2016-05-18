@@ -83,18 +83,19 @@ func (l fayeLogger) Warnf(f string, a ...interface{}) {
 
 // FayeClient models a faye client
 type FayeClient struct {
-	state         int
-	url           string
-	subscriptions []*Subscription
-	transport     Transport
-	clientID      string
-	schedular     Schedular
-	nextRetry     int64
-	nextHandshake int64
-	mutex         *sync.RWMutex // protects instance vars across goroutines
-	connectMutex  *sync.RWMutex // ensures a single connection to the server as per the protocol
-	extns         []Extension
+	state          int
+	url            string
+	subscriptions  []*Subscription
+	transport      Transport
 	log            Logger
+	clientID       string
+	schedular      schedular
+	nextRetry      int64
+	nextHandshake  int64
+	mutex          *sync.RWMutex // protects instance vars across goroutines
+	connectMutex   *sync.RWMutex // ensures a single connection to the server as per the protocol
+	handshakeMutex *sync.RWMutex // ensures only a single handshake at a time
+	extns          []Extension
 }
 
 // NewFayeClient returns a new client for interfacing to a faye server
@@ -142,9 +143,12 @@ func (faye *FayeClient) whileConnectingBlockUntilConnected() {
 
 func (faye *FayeClient) handshake() error {
 
+	faye.handshakeMutex.Lock()
+	defer faye.handshakeMutex.Unlock()
+
 	// uh oh spaghettios!
 	if faye.state == DISCONNECTED {
-		return fmt.Errorf("Server told us not to reconnect")
+		return fmt.Errorf("GTFO: Server told us not to reconnect :(")
 	}
 
 	// check if we need to wait before handshaking again
@@ -171,24 +175,25 @@ func (faye *FayeClient) handshake() error {
 	faye.state = CONNECTING
 	faye.mutex.Unlock()
 
-	msg := faye.newMessage("/meta/handshake")
-	msg.Version = "1.0"
-	msg.SupportedConnectionTypes = []string{"long-polling"}
-	response, _, err := faye.send(msg)
+	var response Response
 
-	if err != nil {
-		faye.log.Warnf("Handshake failed. Retry in 10 seconds")
+	for {
+		msg := faye.newMessage("/meta/handshake")
+		msg.Version = "1.0"
+		msg.SupportedConnectionTypes = []string{"long-polling"}
+		response, _, err = faye.send(msg)
 
-		faye.mutex.Lock()
-		faye.state = UNCONNECTED
-		faye.mutex.Unlock()
+		if err != nil {
+			faye.mutex.Lock()
+			faye.state = UNCONNECTED
+			faye.mutex.Unlock()
 
-		time.Sleep(10 * time.Second)
-		if err = faye.handshake(); err != nil {
-			return err
+			faye.log.Warnf("Handshake failed. Retry in 10 seconds")
+			time.Sleep(10 * time.Second)
+			continue
 		}
 
-		return nil
+		break
 	}
 
 	faye.mutex.Lock()
@@ -203,7 +208,7 @@ func (faye *FayeClient) handshake() error {
 	}
 
 	if oldClientID != faye.clientID && len(faye.subscriptions) > 0 {
-		faye.log.Warnf("Client ID changed (%s => %s), %d invlaid subscriptions\n", oldClientID, faye.clientID, len(faye.subscriptions))
+		faye.log.Warnf("Client ID changed (%s => %s), %d invalid subscriptions\n", oldClientID, faye.clientID, len(faye.subscriptions))
 		faye.resubscribeAll()
 	}
 
