@@ -111,7 +111,25 @@ func NewFayeClient(url string) *FayeClient {
 	}
 }
 
-// SetLogger attaches a logger to the faye client, and replaces the default
+// Out spies on outgoing messages and prints them to the log, when the client
+// is added to itself as an extension
+func (faye *FayeClient) Out(msg Message) {
+	switch v := msg.(type) {
+	case msgWrapper:
+		b, _ := v.MarshalJSON()
+		faye.log.Debugf("[SPY-OUT] %s\n", string(b))
+	}
+}
+
+// In spies on outgoing messages and prints them to the log, when the client
+// is added to itself as an extension
+func (faye *FayeClient) In(msg Message) {
+	switch v := msg.(type) {
+	case msgWrapper:
+		b, _ := v.MarshalJSON()
+		faye.log.Debugf("[SPY-IN]  %s\n", string(b))
+	}
+}
 
 // SetLogger attaches a Logger to the faye client, and replaces the default
 // logger which just puts to stdout
