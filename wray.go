@@ -366,7 +366,8 @@ func (faye *FayeClient) connect() {
 
 	response, messages, err := faye.send(msg)
 	if err != nil {
-		faye.log.Errorf("Error while sending connect request: %s", response.Error())
+		faye.log.Errorf("Error while sending connect request: %s", err)
+		return
 	}
 
 	go faye.handleAdvice(response.Advice())
@@ -394,7 +395,8 @@ func (faye *FayeClient) send(msg *message) (Response, []Message, error) {
 
 	dec, err := faye.transport.send(message)
 	if err != nil {
-		faye.log.Errorf("Error transporting message: %s", err)
+		err = fmt.Errorf("Error transporting message: %s", err)
+		faye.log.Errorf("%s", err)
 		return nil, []Message{}, err
 	}
 

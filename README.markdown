@@ -190,7 +190,7 @@ There is still a lot to do to bring Wray in line with Faye functionality. This i
 - [ ] automated integrations test to ensure Wray continues to work with Faye
 - [ ] split connection out into it's own object
 - [ ] timeout connect requests using advice from the server
-- [ ] don't panic when the server goes away
+- [x] don't panic when the server goes away
 - [ ] return an interface instead of the client itself
 - [ ] use NewClient instead of NewFayeClient
 
