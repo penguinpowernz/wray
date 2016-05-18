@@ -100,14 +100,14 @@ type FayeClient struct {
 
 // NewFayeClient returns a new client for interfacing to a faye server
 func NewFayeClient(url string) *FayeClient {
-	schedular := ChannelSchedular{}
 	return &FayeClient{
-		url:          url,
-		state:        UNCONNECTED,
-		schedular:    schedular,
-		mutex:        &sync.RWMutex{},
-		connectMutex: &sync.RWMutex{},
-		log:          fayeLogger{},
+		url:            url,
+		state:          UNCONNECTED,
+		schedular:      channelSchedular{},
+		mutex:          &sync.RWMutex{},
+		connectMutex:   &sync.RWMutex{},
+		handshakeMutex: &sync.RWMutex{},
+		log:            fayeLogger{},
 	}
 }
 
