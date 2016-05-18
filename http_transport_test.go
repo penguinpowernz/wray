@@ -21,44 +21,44 @@ func TestIsUsable(t *testing.T) {
 		var url string
 		var httpTransport HTTPTransport
 		var isUsable = true
-		Given(func() { url = "http://localhost" })
-		Given(func() { httpTransport = HTTPTransport{} })
-		When(func() { isUsable = httpTransport.isUsable(url) })
-		Then(func() { So(isUsable, ShouldEqual, true) })
+		url = "http://localhost"
+		httpTransport = HTTPTransport{}
+		isUsable = httpTransport.isUsable(url)
+		So(isUsable, ShouldEqual, true)
 	})
 	Convey("usable if the url is https", t, func() {
 		var url string
 		var httpTransport HTTPTransport
 		var isUsable = true
-		Given(func() { url = "https://localhost" })
-		Given(func() { httpTransport = HTTPTransport{} })
-		When(func() { isUsable = httpTransport.isUsable(url) })
-		Then(func() { So(isUsable, ShouldEqual, true) })
+		url = "https://localhost"
+		httpTransport = HTTPTransport{}
+		isUsable = httpTransport.isUsable(url)
+		So(isUsable, ShouldEqual, true)
 	})
 	Convey("usable if the url is ws", t, func() {
 		var url string
 		var httpTransport HTTPTransport
 		var isUsable = true
-		Given(func() { url = "ws://localhost" })
-		Given(func() { httpTransport = HTTPTransport{} })
-		When(func() { isUsable = httpTransport.isUsable(url) })
-		Then(func() { So(isUsable, ShouldEqual, false) })
+		url = "ws://localhost"
+		httpTransport = HTTPTransport{}
+		isUsable = httpTransport.isUsable(url)
+		So(isUsable, ShouldEqual, false)
 	})
 	Convey("usable if the url is not blank", t, func() {
 		var url string
 		var httpTransport HTTPTransport
 		var isUsable = true
-		Given(func() { url = "" })
-		Given(func() { httpTransport = HTTPTransport{} })
-		When(func() { isUsable = httpTransport.isUsable(url) })
-		Then(func() { So(isUsable, ShouldEqual, false) })
+		url = ""
+		httpTransport = HTTPTransport{}
+		isUsable = httpTransport.isUsable(url)
+		So(isUsable, ShouldEqual, false)
 	})
 }
 
 func TestConnectionType(t *testing.T) {
 	Convey("connection type is long-polling", t, func() {
 		var httpTransport HTTPTransport
-		Given(func() { httpTransport = HTTPTransport{} })
-		Then(func() { So(httpTransport.connectionType(), ShouldEqual, "long-polling") })
+		httpTransport = HTTPTransport{}
+		So(httpTransport.connectionType(), ShouldEqual, "long-polling")
 	})
 }
