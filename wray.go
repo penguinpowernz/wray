@@ -264,7 +264,7 @@ func (faye *FayeClient) resubscribeAll() {
 					defer faye.mutex.Unlock()
 					faye.subscriptions = append(faye.subscriptions, sub)
 
-					faye.log.Debugf("Resubscribed to", sub.channel)
+					faye.log.Debugf("Resubscribed to %s", sub.channel)
 					return
 				}
 
@@ -338,18 +338,18 @@ func (faye *FayeClient) handleAdvice(advice Advice) {
 		interval := advice.Interval()
 
 		switch advice.Reconnect() {
-		case "retry":
+		case RETRY:
 			if interval > 0 {
 				faye.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
 			}
-		case "handshake":
+		case HANDSHAKE:
 			faye.state = UNCONNECTED // force a handshake on the next request
 			if interval > 0 {
 				faye.nextHandshake = int64(time.Duration(time.Now().Unix()) + (time.Duration(interval) * time.Millisecond))
 			}
-		case "none":
+		case NONE:
 			faye.state = DISCONNECTED
-			faye.log.Errorf("Server advised not to reconnect")
+			faye.log.Errorf("GTFO: Server advised not to reconnect :(")
 		}
 	}
 }
@@ -379,6 +379,7 @@ func (faye *FayeClient) connect() {
 
 }
 
+// wraps the call to transport.send()
 func (faye *FayeClient) send(msg *message) (Response, []Message, error) {
 	if msg.ClientID == "" && msg.Channel != "/meta/handshake" && faye.clientID != "" {
 		msg.ClientID = faye.clientID
@@ -393,11 +394,14 @@ func (faye *FayeClient) send(msg *message) (Response, []Message, error) {
 
 	dec, err := faye.transport.send(message)
 	if err != nil {
-		return nil, []Message{}, nil
+		faye.log.Errorf("Error transporting message: %s", err)
+		return nil, []Message{}, err
 	}
 
 	r, m, err := decodeResponse(dec)
-	faye.runExtensions("in", r.(Message))
+	if err != nil {
+		faye.log.Errorf("Failed to decode response: %s", err)
+	}
 
 	if r != nil {
 		faye.runExtensions("in", r.(Message))
@@ -413,6 +417,7 @@ func (faye *FayeClient) AddExtension(extn Extension) {
 
 func (faye *FayeClient) runExtensions(direction string, msg Message) {
 	for _, extn := range faye.extns {
+		faye.log.Debugf("Running extension %T %s", extn, direction)
 		switch direction {
 		case "out":
 			extn.Out(msg)
