@@ -375,7 +375,6 @@ func (faye *FayeClient) connect() {
 		go faye.handleMessages(messages)
 	} else {
 		faye.log.Errorf("Error in response to connect request: %s", response.Error())
-		faye.changeState(UNCONNECTED)
 	}
 
 }
