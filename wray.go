@@ -110,10 +110,21 @@ func NewFayeClient(url string) *FayeClient {
 	}
 }
 
-// AttachLogger attaches a logger to the faye client, and replaces the default
+// SetLogger attaches a logger to the faye client, and replaces the default
 // logger which just puts to stdout
-func (faye *FayeClient) AttachLogger(log logger) {
+func (faye *FayeClient) SetLogger(log logger) {
 	faye.log = log
+}
+
+func (faye *FayeClient) connectIfNotConnected() error {
+	faye.whileConnectingBlockUntilConnected()
+	if faye.state == UNCONNECTED {
+		if err := faye.handshake(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (faye *FayeClient) whileConnectingBlockUntilConnected() {
@@ -127,11 +138,11 @@ func (faye *FayeClient) whileConnectingBlockUntilConnected() {
 	}
 }
 
-func (faye *FayeClient) handshake() {
+func (faye *FayeClient) handshake() error {
 
 	// uh oh spaghettios!
 	if faye.state == DISCONNECTED {
-		faye.log.Errorf("Server told us not to reconnect")
+		return fmt.Errorf("Server told us not to reconnect")
 	}
 
 	// check if we need to wait before handshaking again
@@ -149,7 +160,7 @@ func (faye *FayeClient) handshake() {
 
 	t, err := selectTransport(faye, MANDATORY_CONNECTION_TYPES, []string{})
 	if err != nil {
-		faye.log.Errorf("No usable transports available")
+		return fmt.Errorf("No usable transports available")
 	}
 
 	faye.mutex.Lock()
@@ -164,16 +175,18 @@ func (faye *FayeClient) handshake() {
 	response, _, err := faye.send(msg)
 
 	if err != nil {
-		faye.log.Errorf("Handshake failed. Retry in 10 seconds")
+		faye.log.Warnf("Handshake failed. Retry in 10 seconds")
 
 		faye.mutex.Lock()
 		faye.state = UNCONNECTED
 		faye.mutex.Unlock()
 
 		time.Sleep(10 * time.Second)
-		faye.handshake()
+		if err = faye.handshake(); err != nil {
+			return err
+		}
 
-		return
+		return nil
 	}
 
 	faye.mutex.Lock()
@@ -184,13 +197,15 @@ func (faye *FayeClient) handshake() {
 	faye.mutex.Unlock()
 
 	if err != nil {
-		faye.log.Errorf("Server does not support any available transports. Supported transports: " + strings.Join(response.SupportedConnectionTypes(), ","))
+		return fmt.Errorf("Server does not support any available transports. Supported transports: " + strings.Join(response.SupportedConnectionTypes(), ","))
 	}
 
 	if oldClientID != faye.clientID && len(faye.subscriptions) > 0 {
 		faye.log.Warnf("Client ID changed (%s => %s), %d invlaid subscriptions\n", oldClientID, faye.clientID, len(faye.subscriptions))
 		faye.resubscribeAll()
 	}
+
+	return nil
 }
 
 // change the state in a thread safe manner
@@ -252,9 +267,8 @@ func (faye *FayeClient) resubscribeAll() {
 
 // requests a subscription from the server and returns error if the request failed
 func (faye *FayeClient) requestSubscription(channel string) error {
-	faye.whileConnectingBlockUntilConnected()
-	if faye.state == UNCONNECTED {
-		faye.handshake()
+	if err := faye.connectIfNotConnected(); err != nil {
+		return err
 	}
 
 	msg := faye.newMessage("/meta/subscribe")
@@ -396,9 +410,7 @@ func (faye *FayeClient) runExtensions(direction string, msg Message) {
 
 // Subscribe to a channel
 func (faye *FayeClient) Subscribe(channel string) (MessageWaiter, error) {
-
-	err := faye.requestSubscription(channel)
-	if err != nil {
+	if err := faye.requestSubscription(channel); err != nil {
 		return nil, err
 	}
 
@@ -415,8 +427,7 @@ func (faye *FayeClient) Subscribe(channel string) (MessageWaiter, error) {
 
 // SubscribeWithChan allows giving a custom go channel to receive messages through
 func (faye *FayeClient) SubscribeWithChan(channel string, msgChan chan Message) error {
-	err := faye.requestSubscription(channel)
-	if err != nil {
+	if err := faye.requestSubscription(channel); err != nil {
 		return err
 	}
 
@@ -454,9 +465,8 @@ func (faye *FayeClient) WaitSubscribeWithChan(channel string, msgChan chan Messa
 
 // Publish a message to the given channel
 func (faye *FayeClient) Publish(channel string, data map[string]interface{}) error {
-	faye.whileConnectingBlockUntilConnected()
-	if faye.state == UNCONNECTED {
-		faye.handshake()
+	if err := faye.connectIfNotConnected(); err != nil {
+		return err
 	}
 
 	msg := faye.newMessage(channel)
@@ -479,9 +489,9 @@ func (faye *FayeClient) Publish(channel string, data map[string]interface{}) err
 // blocking but can safely run in it's own goroutine.
 func (faye *FayeClient) Listen() {
 	for {
-		faye.whileConnectingBlockUntilConnected()
-		if faye.state == UNCONNECTED {
-			faye.handshake()
+		if err := faye.connectIfNotConnected(); err != nil {
+			faye.log.Errorf("Handshake failed: %s", err)
+			time.Sleep(5 * time.Second)
 		}
 
 		for {
