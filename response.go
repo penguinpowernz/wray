@@ -1,10 +1,9 @@
 package wray
 
 import (
-	// "strconv"
 	"bytes"
 	"encoding/json"
-	"fmt"
+	// "fmt"
 )
 
 // Message models a message sent over Faye
@@ -42,19 +41,19 @@ type Advice interface {
 // Models a Bayeux message that can be for sending or receiving
 // TODO: omitempty
 type message struct {
-	ID                       string                 `json:"id"`
-	Channel                  string                 `json:"channel"`
-	Successful               bool                   `json:"successful"`
-	ClientID                 string                 `json:"clientId"`
-	SupportedConnectionTypes []string               `json:"supportedConnectionTypes"`
-	Data                     map[string]interface{} `json:"data"`
-	Advice                   advice                 `json:"advice"`
-	Error                    error                  `json:"error"`
+	ID                       string                 `json:"id,omitempty"`
+	Channel                  string                 `json:"channel,omitempty"`
+	Successful               bool                   `json:"successful,omitempty"`
+	ClientID                 string                 `json:"clientId,omitempty"`
+	SupportedConnectionTypes []string               `json:"supportedConnectionTypes,omitempty"`
+	Data                     map[string]interface{} `json:"data,omitempty"`
+	Advice                   advice                 `json:"advice,omitempty"`
+	Error                    string                 `json:"error,omitempty"`
 	decoder                  decoder
-	Ext                      map[string]interface{} `json:"ext"`
-	ConnectionType           string                 `json:"connectionType"`
-	Subscription             string                 `json:"subscription"`
-	Version                  string                 `json:"version"`
+	Ext                      map[string]interface{} `json:"ext,omitempty"`
+	ConnectionType           string                 `json:"connectionType,omitempty"`
+	Subscription             string                 `json:"subscription,omitempty"`
+	Version                  string                 `json:"version,omitempty"`
 }
 
 type msgWrapper struct {
@@ -70,8 +69,8 @@ func (w msgWrapper) Channel() string              { return w.msg.Channel }
 func (w msgWrapper) Ext() map[string]interface{}        { return w.msg.Ext }
 func (w msgWrapper) OK() bool                           { return w.msg.Successful }
 func (w msgWrapper) Error() string                      { return w.msg.Error }
-func (w msgWrapper) HasError() bool                     { return w.msg.Error != nil }
-func (w msgWrapper) SetError(msg string)                { w.msg.Error = fmt.Errorf(msg) }
+func (w msgWrapper) HasError() bool                     { return w.msg.Error != "" }
+func (w msgWrapper) SetError(msg string)                { w.msg.Error = msg }
 func (w msgWrapper) ConnectionType() string             { return w.msg.ConnectionType }
 func (w msgWrapper) Subscription() string               { return w.msg.Subscription }
 func (w msgWrapper) Advice() Advice                     { return adviceWrapper{w.msg.Advice} }
@@ -109,9 +108,9 @@ func decodeResponse(dec decoder) (Response, []Message, error) {
 }
 
 type advice struct {
-	Reconnect string  `json:"reconnect"`
-	Interval  float64 `json:"interval"`
-	Timeout   float64 `json:"timeout"`
+	Reconnect string  `json:"reconnect,omitempty"`
+	Interval  float64 `json:"interval,omitempty"`
+	Timeout   float64 `json:"timeout,omitempty"`
 }
 
 type adviceWrapper struct {
