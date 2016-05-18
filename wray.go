@@ -43,21 +43,6 @@ type Subscription struct {
 	msgChan chan Message
 }
 
-// MessageWaiter describes an object that will block until a message is available
-// to return to the caller, allowing use in for loops similar to chans.
-type MessageWaiter interface {
-	WaitForMessage() Message
-}
-
-// the message waiter object that satisfied the matching interface
-type messageWaiter struct {
-	msgChan chan Message
-}
-
-// WaitorMessage blocks until there is a message available to return to the caller
-func (w messageWaiter) WaitForMessage() Message {
-	return <-w.msgChan
-}
 // Logger is the interface that faye uses for it's logger
 type Logger interface {
 	Infof(f string, a ...interface{})
@@ -433,59 +418,46 @@ func (faye *FayeClient) runExtensions(direction string, msg Message) {
 	}
 }
 
-// Subscribe to a channel
-func (faye *FayeClient) Subscribe(channel string) (MessageWaiter, error) {
+// Subscribe returns a channel to receive messages through
+func (faye *FayeClient) Subscribe(channel string) (chan Message, error) {
 	if err := faye.requestSubscription(channel); err != nil {
 		return nil, err
 	}
 
 	msgChan := make(chan Message)
 	subscription := &Subscription{channel: channel, msgChan: msgChan}
-	waiter := &messageWaiter{msgChan}
 
 	faye.mutex.Lock()
 	defer faye.mutex.Unlock()
 	faye.subscriptions = append(faye.subscriptions, subscription)
 
-	return waiter, nil
-}
-
-// SubscribeWithChan allows giving a custom go channel to receive messages through
-func (faye *FayeClient) SubscribeWithChan(channel string, msgChan chan Message) error {
-	if err := faye.requestSubscription(channel); err != nil {
-		return err
-	}
-
-	subscription := &Subscription{channel: channel, msgChan: msgChan}
-	faye.mutex.Lock()
-	defer faye.mutex.Unlock()
-	faye.subscriptions = append(faye.subscriptions, subscription)
-
-	return nil
+	return msgChan, nil
 }
 
 // WaitSubscribe will send a subscribe request and block until the connection was successful
-func (faye *FayeClient) WaitSubscribe(channel string) MessageWaiter {
+func (faye *FayeClient) WaitSubscribe(channel string, optionalMsgChan ...chan Message) chan Message {
 
 	for {
-		waiter, err := faye.Subscribe(channel)
-
-		if err == nil {
-			return waiter
+		if err := faye.requestSubscription(channel); err != nil {
+			faye.log.Errorf("[WaitSubscribe]: %s", err)
+			time.Sleep(1 * time.Second)
+			continue
 		}
+		break
 	}
-}
 
-// WaitSubscribeWithChan will send a subscribe request with custom go channel and block until the connection was successful
-func (faye *FayeClient) WaitSubscribeWithChan(channel string, msgChan chan Message) {
-
-	for {
-		err := faye.SubscribeWithChan(channel, msgChan)
-
-		if err == nil {
-			return
-		}
+	msgChan := make(chan Message)
+	if len(optionalMsgChan) > 0 {
+		msgChan = optionalMsgChan[0]
 	}
+
+	subscription := &Subscription{channel: channel, msgChan: msgChan}
+
+	faye.mutex.Lock()
+	defer faye.mutex.Unlock()
+	faye.subscriptions = append(faye.subscriptions, subscription)
+
+	return msgChan
 }
 
 // Publish a message to the given channel
